@@ -4,10 +4,14 @@ channel:
   audience: "Pakistan, India"
   niche: "Tech & AI Tools"
   tagline: "AI ki duniya, Urdu mein."
+  youtube_handle: "@SKILLOR"
 
 video:
-  resolution: [1080, 1920]
+  resolution: [1080, 1920]  # 9:16 for Shorts
   fps: 30
+  duration: 
+    min: 40
+    max: 55
   font: "Jameel Noori Nastaleeq"
   caption_style:
     font_size: 64
@@ -25,22 +29,60 @@ tts:
 script:
   max_words: 180
   tone: "energetic, simple Urdu, thoda Roman Urdu mix, hooks ke sath"
-  cta: "Channel SKILLOR ko follow karein aur AI tools k baray me roz seekhein!"
+  cta: "SKILLOR ko follow karein aur AI tools k baray me roz seekhein!"
 
 stock_footage:
   provider_priority: ["pexels", "pixabay"]
   clips_per_video: 5
   clip_min_duration: 3
+  fallback_to_static: true
 
 tool_screenshot:
   enabled: true
   scroll_capture: true
   capture_duration_sec: 6
+  max_tools: 3
+
+seo:
+  titles:
+    max_length: 60
+    power_words: ["Complete", "Easy", "Simple", "Professional", "New", "Ultimate"]
+  descriptions:
+    include_timestamps: true
+    include_links: true
+  hashtags:
+    max_count: 15
+    include_channel: true
+
+thumbnail:
+  enabled: true
+  resolution: [1280, 720]
+  text_color: "#FFFFFF"
+  accent_color: "#FFD400"
+  background: "dark_gradient"
 
 upload:
   youtube:
-    enabled: false
+    enabled: true
     privacy: "public"
-    category_id: "28"
+    category_id: "28"  # Tech category
+    scheduled_upload: false
   tiktok:
     enabled: false
+
+scheduler:
+  enabled: true
+  videos_per_day: 3
+  upload_times: ["10:00", "14:00", "18:00"]  # Pakistan Standard Time
+  timezone: "Asia/Karachi"
+  max_retries: 3
+  retry_delay_minutes: 30
+
+automation:
+  trending_topics:
+    sources: ["product_hunt", "github", "hacker_news", "twitter"]
+    max_topics: 20
+    refresh_interval_hours: 6
+  content_rotation:
+    categories: ["AI Tools", "ChatGPT", "Tech News", "Productivity", "Coding"]
+    avoid_duplicates_days: 7
