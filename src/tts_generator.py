@@ -1,78 +1,50 @@
 """
 tts_generator.py
-Edge TTS se Urdu voice generate karta hai aur word boundaries save karta hai
+gTTS (Google Text-to-Speech) se Urdu/Roman Urdu voice generate karta hai 
+aur subtitles/captions ke liye fallback word boundaries banata hai.
 """
 import os
-import asyncio
 import logging
-import edge_tts
+from gtts import gTTS
 
 logger = logging.getLogger(__name__)
 
 
 class TTSGenerator:
-    def __init__(self, voice: str = "ur-PK-AsadNeural", rate: str = "+0%", pitch: str = "+0Hz"):
-        """Initialize TTS Generator with Edge TTS"""
-        self.voice = voice
+    def __init__(self, voice: str = "default", rate: str = "+0%", pitch: str = "+0Hz"):
+        """Initialize TTS Generator with gTTS"""
+        # Note: gTTS abstracts direct voice names, using accent-based generation
         self.rate = rate
         self.pitch = pitch
-        logger.info(f"✅ TTSGenerator initialized with voice: {voice}")
+        logger.info("✅ TTSGenerator initialized using gTTS (Google)")
     
     def generate(self, text: str, output_path: str = "output/voice.mp3") -> list:
         """Generate TTS and return word boundaries"""
         try:
-            # Create directory
+            # Create output directory if it doesn't exist
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
-            # Run async function in new event loop
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                word_boundaries = loop.run_until_complete(self._generate_async(text, output_path))
-                loop.close()
-            except RuntimeError:
-                # If already in event loop, use asyncio.run()
-                word_boundaries = asyncio.run(self._generate_async(text, output_path))
+            # lang='hi' (Hindi) is used here because it perfectly reads Roman Urdu/Hindi 
+            # scripts without switching to a foreign English accent.
+            tts = gTTS(text=text, lang='hi', slow=False)
+            tts.save(output_path)
             
-            if not word_boundaries:
-                logger.warning("No word boundaries generated, creating fallback")
-                word_boundaries = self._create_fallback_boundaries(text)
+            # Generate fallback boundaries since gTTS doesn't stream word timestamps natively
+            word_boundaries = self._create_fallback_boundaries(text)
             
-            logger.info(f"✅ TTS generated: {output_path} ({len(word_boundaries)} words)")
+            logger.info(f"✅ TTS generated successfully: {output_path} ({len(word_boundaries)} words)")
             return word_boundaries
             
         except Exception as e:
-            logger.error(f"❌ TTS generation failed: {e}")
-            # Create fallback boundaries
+            logger.error(f"❌ gTTS generation failed: {e}")
+            # Create fallback boundaries in case of complete failure
             return self._create_fallback_boundaries(text)
     
-    async def _generate_async(self, text: str, output_path: str):
-        """Generate TTS asynchronously and return word boundaries"""
-        try:
-            communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
-            word_boundaries = []
-            
-            with open(output_path, "wb") as audio_file:
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        audio_file.write(chunk["data"])
-                    elif chunk["type"] == "WordBoundary":
-                        word_boundaries.append({
-                            "text": chunk["text"],
-                            "start": chunk["offset"] / 10_000_000,
-                            "duration": chunk["duration"] / 10_000_000,
-                        })
-            
-            return word_boundaries
-            
-        except Exception as e:
-            logger.error(f"❌ Edge TTS async error: {e}")
-            raise
-    
     def _create_fallback_boundaries(self, text: str) -> list:
-        """Create fallback word boundaries if TTS fails"""
+        """Create fallback word boundaries based on word count"""
         words = text.split()
-        duration_per_word = 0.3
+        # Roughly estimate 0.25 seconds per word for smooth caption pacing
+        duration_per_word = 0.25
         boundaries = []
         
         for i, word in enumerate(words):
