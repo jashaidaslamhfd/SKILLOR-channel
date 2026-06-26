@@ -39,7 +39,7 @@ tool_screenshot:
 
 upload:
   youtube:
-    enabled: true
+    enabled: false
     privacy: "public"
     category_id: "28"
   tiktok:
