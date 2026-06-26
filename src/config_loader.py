@@ -36,7 +36,6 @@ def validate_config():
     """Validate that all required config exists"""
     required_env = [
         "GROQ_API_KEY",
-        "PEXELS_API_KEY",
     ]
     
     missing = []
@@ -54,4 +53,3 @@ def validate_config():
 
 # Load on import
 load_env()
-settings = load_settings()
