@@ -1,12 +1,18 @@
 """
 script_generator.py
-Groq API ka use karke SKILLOR channel ke liye Urdu script generate karta hai.
-Output: dict with {title, hook, body, cta, tool_names (list, agar koi AI tool mention hua ho)}
+Groq API se Urdu script generate karta hai SKILLOR channel ke liye
 """
 import os
 import json
 import re
+import logging
+from dotenv import load_dotenv
 from groq import Groq
+
+# Load environment
+load_dotenv("config/.env")
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Tum ek professional YouTube Shorts script writer ho, channel ka naam "SKILLOR" hai.
 Channel ka niche: Tech aur AI Tools. Audience: Pakistan aur India ke log.
@@ -28,46 +34,72 @@ Rules:
 }
 """
 
+
 class ScriptGenerator:
     def __init__(self, api_key: str = None, model: str = None):
-        self.client = Groq(api_key=api_key or os.getenv("GROQ_API_KEY"))
+        """Initialize ScriptGenerator with Groq API"""
+        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+        if not self.api_key:
+            raise ValueError("❌ GROQ_API_KEY not found! Please set in .env file")
+        
+        self.client = Groq(api_key=self.api_key)
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
+        logger.info(f"✅ ScriptGenerator initialized with model: {self.model}")
+    
     def generate(self, topic: str) -> dict:
-        completion = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Topic: {topic}\n\nIs topic par script likho."},
-            ],
-            temperature=0.8,
-            max_tokens=800,
-        )
-        raw = completion.choices[0].message.content.strip()
-
-        # Kabhi kabhi model ```json fences laga deta hai, unhe hata dete hain
-        raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
-
+        """Generate script for given topic"""
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            # fallback: agar JSON parse fail ho jaye to plain text wrap kar do
-            data = {
-                "title": topic[:60],
-                "hook": raw[:120],
-                "body": raw,
-                "cta": "SKILLOR ko follow karein!",
-                "tool_names": [],
-            }
-
-        data.setdefault("tool_names", [])
-        data["full_text"] = f"{data.get('hook','')} {data.get('body','')} {data.get('cta','')}".strip()
-        return data
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Topic: {topic}\n\nIs topic par script likho."},
+                ],
+                temperature=0.8,
+                max_tokens=800,
+            )
+            
+            raw = completion.choices[0].message.content.strip()
+            
+            # Remove markdown code fences
+            raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
+            raw = re.sub(r"^```|```$", "", raw, flags=re.MULTILINE).strip()
+            
+            # Try to parse JSON
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning(f"JSON parse failed, using fallback: {raw[:100]}...")
+                data = self._create_fallback_script(topic, raw)
+            
+            # Ensure required fields
+            data.setdefault("tool_names", [])
+            data.setdefault("cta", "SKILLOR ko follow karein!")
+            
+            # Create full text
+            data["full_text"] = f"{data.get('hook', '')} {data.get('body', '')} {data.get('cta', '')}".strip()
+            
+            logger.info(f"✅ Script generated: {data.get('title', topic)}")
+            return data
+            
+        except Exception as e:
+            logger.error(f"❌ Script generation failed: {e}")
+            return self._create_fallback_script(topic, str(e))
+    
+    def _create_fallback_script(self, topic: str, error_msg: str = "") -> dict:
+        """Create fallback script if API fails"""
+        return {
+            "title": topic[:60],
+            "hook": f"Assalam-o-Alaikum! Aaj ki baat hai {topic}",
+            "body": f"Ya video {topic} ke baare mein hai. AI tools ki duniya mein SKILLOR aapka guide hai!",
+            "cta": "SKILLOR ko follow karein!",
+            "tool_names": [],
+            "full_text": f"Assalam-o-Alaikum! Aaj ki baat hai {topic}. Ya video {topic} ke baare mein hai. AI tools ki duniya mein SKILLOR aapka guide hai! SKILLOR ko follow karein!"
+        }
 
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv("config/.env")
+    # Test script generator
     gen = ScriptGenerator()
-    result = gen.generate("ChatGPT ka naya feature jo aap nahi jante")
+    result = gen.generate("ChatGPT ka naya feature")
     print(json.dumps(result, indent=2, ensure_ascii=False))
