@@ -1,5 +1,5 @@
 """
-pipeline.py - FIXED
+pipeline.py - UPDATED with better tool name handling
 """
 import os
 import sys
@@ -30,20 +30,12 @@ class SkillorPipeline:
         
         # Get API keys
         import os
-        groq_key = os.getenv("GROQ_API_KEY")
-        if not groq_key:
-            print("⚠️ GROQ_API_KEY not found, using fallback script generator")
         
-        # Initialize components with error handling
-        try:
-            self.script_gen = ScriptGenerator(
-                api_key=groq_key,
-                model=os.getenv("GROQ_MODEL", self.settings["script"].get("model", "llama-3.3-70b-versatile"))
-            )
-        except Exception as e:
-            print(f"⚠️ ScriptGenerator initialization failed: {e}")
-            # Create a dummy script generator
-            self.script_gen = None
+        # Initialize components
+        self.script_gen = ScriptGenerator(
+            api_key=os.getenv("GROQ_API_KEY"),
+            model=os.getenv("GROQ_MODEL", self.settings["script"].get("model", "llama-3.3-70b-versatile"))
+        )
         
         self.tts_gen = TTSGenerator(
             voice=os.getenv("TTS_VOICE", self.settings["tts"]["voice"]),
@@ -69,6 +61,20 @@ class SkillorPipeline:
         
         logger.info("✅ Pipeline initialized successfully")
     
+    def _clean_tool_name(self, tool_name: str) -> str:
+        """Clean and validate tool name"""
+        # Remove spaces
+        tool_name = tool_name.strip().replace(" ", "")
+        
+        # Remove "AI" suffix if present
+        tool_name = tool_name.replace("AI", "")
+        
+        # Add .com if no extension
+        if "." not in tool_name:
+            tool_name = f"{tool_name}.com"
+        
+        return tool_name.lower()
+    
     def run(self, topic: str, output_dir: str = "output") -> dict:
         """Run the complete pipeline for a single topic"""
         os.makedirs(output_dir, exist_ok=True)
@@ -76,17 +82,7 @@ class SkillorPipeline:
         os.makedirs(clips_dir, exist_ok=True)
         
         print(f"\n🧠 [1/5] Generating script for: '{topic}'")
-        
-        # Generate script (with fallback)
-        if self.script_gen:
-            try:
-                script = self.script_gen.generate(topic)
-            except Exception as e:
-                print(f"⚠️ Script generation failed: {e}")
-                script = self._create_fallback_script(topic)
-        else:
-            script = self._create_fallback_script(topic)
-        
+        script = self.script_gen.generate(topic)
         print(f"   Title: {script['title']}")
         
         print("🎙️  [2/5] Generating Urdu voice...")
@@ -102,27 +98,37 @@ class SkillorPipeline:
         print("🎬 [4/5] Collecting visuals...")
         clip_paths = []
         
+        # Tool screenshots
         if script.get("tool_names") and self.settings["tool_screenshot"]["enabled"]:
             max_tools = self.settings["tool_screenshot"].get("max_tools_per_video", 2)
             for tool_name in script["tool_names"][:max_tools]:
-                url = tool_name if tool_name.startswith("http") else f"https://{tool_name}"
-                clip_path = os.path.join(clips_dir, f"tool_{tool_name.replace('.', '_')}.mp4")
+                # Clean the tool name
+                clean_tool = self._clean_tool_name(tool_name)
+                url = clean_tool if clean_tool.startswith("http") else f"https://{clean_tool}"
+                
+                clip_path = os.path.join(clips_dir, f"tool_{clean_tool.replace('.', '_')}.mp4")
+                
+                print(f"   📸 Capturing tool: {clean_tool}")
                 clip = self.tool_capture.capture_scroll_video(
                     url,
                     clip_path,
                     duration_sec=self.settings["tool_screenshot"]["capture_duration_sec"],
                 )
-                if clip:
+                if clip and os.path.exists(clip):
                     clip_paths.append(clip)
+                    print(f"   ✅ Tool clip captured")
         
+        # Stock footage
         remaining = self.settings["stock_footage"]["clips_per_video"] - len(clip_paths)
         if remaining > 0:
+            print(f"   🎬 Fetching {remaining} stock clips...")
             stock_clips = self.footage_fetcher.fetch(
                 query=topic, 
                 count=remaining, 
                 save_dir=clips_dir
             )
             clip_paths.extend(stock_clips)
+            print(f"   ✅ {len(stock_clips)} stock clips fetched")
         
         if not clip_paths:
             raise RuntimeError("❌ No clips found! Check API keys.")
@@ -152,27 +158,9 @@ class SkillorPipeline:
             "title": script["title"],
             "script": script,
         }
-    
-    def _create_fallback_script(self, topic: str) -> dict:
-        """Create fallback script"""
-        tool_names = []
-        tools = ["chatgpt", "midjourney", "canva", "deepseek", "perplexity"]
-        for tool in tools:
-            if tool in topic.lower():
-                tool_names.append(f"{tool}.com")
-                break
-        
-        return {
-            "title": topic[:60],
-            "hook": f"Assalam-o-Alaikum! Aaj ki baat hai {topic}",
-            "body": f"Ya video {topic} ke baare mein hai. SKILLOR par AI tools seekhein!",
-            "cta": "SKILLOR ko follow karein!",
-            "tool_names": tool_names,
-            "full_text": f"Assalam-o-Alaikum! Aaj ki baat hai {topic}. Ya video {topic} ke baare mein hai. SKILLOR par AI tools seekhein! SKILLOR ko follow karein!"
-        }
 
 
 if __name__ == "__main__":
     pipeline = SkillorPipeline()
-    result = pipeline.run("Midjourney se professional images kaise banayein")
+    result = pipeline.run("Notion AI kya hai aur kaise use karein")
     print(f"\n✅ Result: {result['title']}")
