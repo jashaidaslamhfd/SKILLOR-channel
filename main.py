@@ -3,7 +3,7 @@ main.py
 SKILLOR Automation - Main Entry Point
 
 Usage:
-    python main.py --topic "ChatGPT ka naya feature" --upload yes
+    python main.py --topic "ChatGPT ka naya feature" --upload no
     python main.py --mode scheduler
     python main.py --mode manual --count 3
 """
@@ -50,7 +50,7 @@ def single_video_mode(topic: str, upload: bool = False):
     )
     print(f"🖼️ Thumbnail generated: {thumbnail_path}")
     
-    # Upload if requested
+    # Upload if requested via CLI args (--upload yes)
     if upload:
         settings = load_settings()
         
@@ -71,7 +71,7 @@ def single_video_mode(topic: str, upload: bool = False):
         else:
             print("\nℹ️  YouTube upload disabled in settings")
     else:
-        print("\nℹ️  Upload skip kar diya gaya. Video output/ folder mein maujood hai.")
+        print("\nℹ️  Upload skip kar diya gaya. Video 'output/' folder mein mehfooz hai.")
     
     return result
 
@@ -99,7 +99,7 @@ def main():
                        default="single", help="Run mode")
     parser.add_argument("--topic", help="Video topic (for single mode)")
     parser.add_argument("--upload", choices=["yes", "no"], default="no", 
-                       help="Upload karna hai ya nahi")
+                       help="Upload manually to YouTube/TikTok? (yes/no)")
     parser.add_argument("--count", type=int, default=1, 
                        help="Manual run: number of videos to generate")
     
@@ -119,6 +119,7 @@ def main():
             print("Example: python main.py --topic 'ChatGPT ka naya feature'")
             sys.exit(1)
         
+        # Passes True/False directly based on your CLI --upload yes/no argument
         single_video_mode(args.topic, args.upload == "yes")
 
 
