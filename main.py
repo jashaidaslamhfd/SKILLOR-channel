@@ -34,8 +34,8 @@ def single_video_mode(topic: str, upload: bool = False):
     
     # SEO Optimization
     seo = SEOOptimizer()
-    optimized_title = seo.optimize_title(result["title"])
-    description = seo.generate_description(script, tool_names)
+    optimized_title = seo.optimize_title_2026(result["title"])
+    description = seo.generate_description_2026(script, tool_names)
     tags = seo.generate_hashtags("Tech", tool_names)
     
     print(f"\n📌 Optimized Title: {optimized_title}")
