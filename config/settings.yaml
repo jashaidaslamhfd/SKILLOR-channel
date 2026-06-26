@@ -1,0 +1,46 @@
+channel:
+  name: "SKILLOR"
+  language: "ur"
+  audience: "Pakistan, India"
+  niche: "Tech & AI Tools"
+  tagline: "AI ki duniya, Urdu mein."
+
+video:
+  resolution: [1080, 1920]
+  fps: 30
+  font: "Jameel Noori Nastaleeq"
+  caption_style:
+    font_size: 64
+    color: "white"
+    highlight_color: "#FFD400"
+    stroke_color: "black"
+    stroke_width: 3
+    position: "bottom-center"
+
+tts:
+  voice: "ur-PK-AsadNeural"
+  rate: "+0%"
+  pitch: "+0Hz"
+
+script:
+  max_words: 180
+  tone: "energetic, simple Urdu, thoda Roman Urdu mix, hooks ke sath"
+  cta: "Channel SKILLOR ko follow karein aur AI tools k baray me roz seekhein!"
+
+stock_footage:
+  provider_priority: ["pexels", "pixabay"]
+  clips_per_video: 5
+  clip_min_duration: 3
+
+tool_screenshot:
+  enabled: true
+  scroll_capture: true
+  capture_duration_sec: 6
+
+upload:
+  youtube:
+    enabled: true
+    privacy: "public"
+    category_id: "28"
+  tiktok:
+    enabled: false
