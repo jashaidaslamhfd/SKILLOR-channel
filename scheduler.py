@@ -75,8 +75,8 @@ class SKILLORAutomation:
             tool_names = script.get("tool_names", [])
             
             # Step 4: SEO Optimization
-            optimized_title = self.seo_optimizer.optimize_title(result["title"])
-            description = self.seo_optimizer.generate_description(script, tool_names)
+            optimized_title = self.seo_optimizer.optimize_title_2026(result["title"])
+            description = self.seo_optimizer.generate_description_2026(script, tool_names)
             tags = self.seo_optimizer.generate_hashtags("Tech", tool_names)
             
             logger.info(f"📌 Optimized Title: {optimized_title}")
