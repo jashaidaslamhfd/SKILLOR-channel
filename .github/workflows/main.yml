@@ -1,0 +1,58 @@
+name: "🚀 SKILLOR - 3x Daily YouTube Shorts Upload"
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+    - cron: '0 16 * * *'
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  generate-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          # chatterbox-tts is built specifically for Python 3.11 and can
+          # fail to install (pkuseg build errors etc.) on other versions -
+          # keep this pinned to 3.11 even if other tooling moves on.
+          python-version: '3.11'
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core imagemagick
+          # Ubuntu's default ImageMagick policy blocks the text/label/caption
+          # operations MoviePy's TextClip relies on ("not authorized" errors).
+          # Relax that policy so caption rendering works in CI.
+          POLICY_FILE=$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n1)
+          if [ -n "$POLICY_FILE" ]; then
+            sudo sed -i 's/rights="none"/rights="read|write"/g' "$POLICY_FILE"
+          fi
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - run: python src/main.py
+        env:
+          IMAGEMAGICK_BINARY: /usr/bin/convert
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+          # Separate from HF_API_KEY above (that one is for our own image-gen
+          # calls). huggingface_hub (used internally by Kokoro/Chatterbox to
+          # download model weights) auto-detects HF_TOKEN specifically - this
+          # is what silences the "sending unauthenticated requests" warning
+          # and gets higher download rate limits. Same HuggingFace account,
+          # just needs to be passed under this exact variable name.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
