@@ -2,9 +2,9 @@ name: "🚀 SKILLOR - 3x Daily YouTube Shorts Upload"
 
 on:
   schedule:
-    - cron: '30 5 * * *'
-    - cron: '30 10 * * *'
-    - cron: '30 16 * * *'
+    - cron: '30 6 * * *'
+    - cron: '30 11 * * *'
+    - cron: '30 18 * * *'
   workflow_dispatch:
 
 jobs:
