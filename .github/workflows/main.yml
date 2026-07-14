@@ -1,58 +1,99 @@
-name: "🚀 SKILLOR - 3x Daily YouTube Shorts Upload"
+name: "🚀 SKILLOR - French 9:16 YouTube Shorts"
 
 on:
   schedule:
-    - cron: '30 6 * * *'
-    - cron: '30 11 * * *'
+    # France/Paris target windows in summer time: 07:30, 12:15, 20:30.
+    # GitHub cron is UTC. Re-check around DST changes if exact timing matters.
+    - cron: '30 5 * * *'
+    - cron: '15 10 * * *'
     - cron: '30 18 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build video but skip YouTube upload"
+        required: false
+        default: "false"
 
 jobs:
+  validate-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Compile Python files
+        run: python -m py_compile src/*.py scripts/*.py tests/*.py
+      - name: Run lightweight unit tests
+        run: |
+          python -m pip install pytest
+          pytest -q
+
   generate-and-upload:
+    needs: validate-code
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v4
         with:
-          # chatterbox-tts is built specifically for Python 3.11 and can
-          # fail to install (pkuseg build errors etc.) on other versions -
-          # keep this pinned to 3.11 even if other tooling moves on.
           python-version: '3.11'
 
-      - run: |
+      - name: Cache HuggingFace / torch model downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/torch
+          key: model-cache-${{ runner.os }}-py311-v1
+
+      - name: Install system + Python dependencies
+        run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core imagemagick
-          # Ubuntu's default ImageMagick policy blocks the text/label/caption
-          # operations MoviePy's TextClip relies on ("not authorized" errors).
-          # Relax that policy so caption rendering works in CI.
           POLICY_FILE=$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n1)
           if [ -n "$POLICY_FILE" ]; then
             sudo sed -i 's/rights="none"/rights="read|write"/g' "$POLICY_FILE"
           fi
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
-      - run: python src/main.py
+      - name: Generate French Short and upload
+        run: python src/main.py
         env:
           IMAGEMAGICK_BINARY: /usr/bin/convert
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          ALLOW_QUALITY_OVERRIDE: "false"
+          USE_TREND_RESEARCH: "false"
+          FALLBACK_ABORT_RATIO: "0.65"
+          VOICE_REFERENCE_PATH: assets/voice_reference.wav
+          REQUIRE_CLONED_VOICE: "true"
+
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          # Separate from HF_API_KEY above (that one is for our own image-gen
-          # calls). huggingface_hub (used internally by Kokoro/Chatterbox to
-          # download model weights) auto-detects HF_TOKEN specifically - this
-          # is what silences the "sending unauthenticated requests" warning
-          # and gets higher download rate limits. Same HuggingFace account,
-          # just needs to be passed under this exact variable name.
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+
+      - name: Upload generated artifacts on failure or dry run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skillor-output
+          path: |
+            output/**
+            pipeline.log
+          if-no-files-found: ignore
+          
