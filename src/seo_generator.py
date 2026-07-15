@@ -23,6 +23,7 @@ anti_spam.py.
 """
 
 import re
+import unicodedata
 import logging
 from typing import Dict, List
 
@@ -46,10 +47,10 @@ PLAYLISTS_BY_CATEGORY = {
 
 _TITLE_TEMPLATES = [
     "{topic}",
-    "La Vérité Sur {topic}",
-    "{topic} (Les Médecins Ne Te Le Diront Pas)",
-    "Pourquoi {topic} Se Produit Vraiment",
-    "{topic}... C'est Réel",
+    "Ce Que Cache {topic}",
+    "La Science Derrière {topic}",
+    "Pourquoi {topic} Arrive Vraiment",
+    "{topic}... Ton Corps Le Fait Déjà",
 ]
 
 
@@ -87,6 +88,17 @@ def generate_title_options(topic: str, script_data: Dict, n: int = 5) -> List[st
     return options[:n]
 
 
+def _to_hashtag(tag: str) -> str:
+    """Convert a YouTube tag/phrase into one valid hashtag token.
+    Spaces and punctuation break hashtags, so we slugify phrases while
+    keeping French letters readable when possible.
+    """
+    tag = str(tag or '').strip().lstrip('#')
+    tag = unicodedata.normalize('NFKD', tag).encode('ascii', 'ignore').decode('ascii')
+    tag = re.sub(r'[^A-Za-z0-9]+', '', tag)
+    return f"#{tag}" if tag else ""
+
+
 def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
     """Wraps niche_strategy.generate_seo_tags() into ready-to-use hashtags,
     ranked broad-first (helps discovery) then niche-specific (helps
@@ -94,7 +106,14 @@ def generate_hashtags(topic: str, category: str, n: int = 8) -> List[str]:
     hashtags above the title anyway, and Shorts specifically rewards a
     tight, relevant set over a long list."""
     tags = generate_seo_tags(topic, category)
-    return [f"#{t}" for t in tags[:n]]
+    result = []
+    for tag in tags:
+        ht = _to_hashtag(tag)
+        if ht and ht.lower() not in (x.lower() for x in result):
+            result.append(ht)
+        if len(result) >= n:
+            break
+    return result
 
 
 def generate_description(script_data: Dict, tags: List[str]) -> str:
@@ -107,7 +126,7 @@ def generate_description(script_data: Dict, tags: List[str]) -> str:
     description = script_data.get('description', '')
 
     first_line = hook[:120] if hook else title
-    yt_hashtags = ' '.join(f"#{t}" for t in tags[:3])
+    yt_hashtags = ' '.join(_to_hashtag(t) for t in tags[:3] if _to_hashtag(t))
 
     return (
         f"{first_line}\n\n"
@@ -149,8 +168,9 @@ def _score_title(title: str) -> int:
     else:
         score += 5  # over 60 chars risks truncation in search results
 
-    power_words = ['secret', 'truth', 'real', 'hidden', 'actually', 'why', 'this',
-                   'vérité', 'réel', 'caché', 'pourquoi', 'vraiment', 'secrets']
+    power_words = ['secret', 'hidden', 'why', 'this',
+                   'vérité', 'réel', 'caché', 'pourquoi', 'vraiment', 'secrets',
+                   'science', 'corps', 'cerveau', 'sommeil', 'stress']
     if any(w in title.lower() for w in power_words):
         score += 20
 
@@ -264,7 +284,7 @@ if __name__ == "__main__":
     test_script = {
         'title': 'Your Heart Has Its Own Brain',
         'hook': "Doctors don't want you to know this about your heart...",
-        'cta': 'Follow for more dark body secrets',
+        'cta': 'Abonne-toi pour plus de science sombre du corps',
         'description': 'Your heart contains its own independent nervous system.',
     }
     result = generate_seo_package("Your Heart Has Its Own Brain", test_script)
