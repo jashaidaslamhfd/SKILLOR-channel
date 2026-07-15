@@ -51,11 +51,11 @@ CHATTERBOX_TEMPERATURE = 0.8
 # per call is 0.5-2.0.
 CHATTERBOX_TEMPO = 0.85
 
-# Optional voice-clone reference. Drop a clean 10-20s WAV (single speaker,
-# no background noise) here and Chatterbox will clone that voice for every
-# video instead of its own built-in default voice. If this file doesn't
-# exist, Chatterbox just uses its default voice - nothing else changes.
-VOICE_REFERENCE_PATH = "assets/voice_reference.wav"
+# Voice clone reference. Default is your own voice sample in assets.
+# REQUIRE_CLONED_VOICE=true means: if cloned voice cannot be used, do NOT
+# silently publish with another voice. Fail the pipeline instead.
+VOICE_REFERENCE_PATH = os.environ.get("VOICE_REFERENCE_PATH", "assets/voice_reference.wav")
+REQUIRE_CLONED_VOICE = os.environ.get("REQUIRE_CLONED_VOICE", "true").lower() == "true"
 
 
 def _get_chatterbox():
@@ -122,8 +122,15 @@ def _synthesize_chatterbox(text: str):
         cfg_weight=CHATTERBOX_CFG_WEIGHT,
         temperature=CHATTERBOX_TEMPERATURE,
     )
+
     if os.path.exists(VOICE_REFERENCE_PATH):
         kwargs["audio_prompt_path"] = VOICE_REFERENCE_PATH
+        logger.info(f"Using cloned voice reference: {VOICE_REFERENCE_PATH}")
+    elif REQUIRE_CLONED_VOICE:
+        raise RuntimeError(
+            f"Required cloned voice reference not found: {VOICE_REFERENCE_PATH}. "
+            "Add your clean WAV file or set REQUIRE_CLONED_VOICE=false."
+        )
 
     wav = model.generate(text, **kwargs)
     audio = wav.squeeze().detach().cpu().numpy().astype(np.float32)
@@ -140,20 +147,15 @@ def _synthesize_chatterbox(text: str):
 
 
 # ---------------------------------------------------------------------------
-# FALLBACK ENGINE: Kokoro (Apache 2.0). No emotion control, but has no
-# install/download surprises and is fast on CPU - kept exactly as before so
-# a Chatterbox failure never takes the whole pipeline down with it.
+# FALLBACK ENGINE: Kokoro (Apache 2.0).
+# When REQUIRE_CLONED_VOICE=true, fallback is disabled for production safety.
 # ---------------------------------------------------------------------------
 _kokoro_tts = None
 _kokoro_load_failed = False
 
 
 def _get_kokoro():
-    """Lazy-loads Kokoro only when actually needed as a fallback. Previously
-    this loaded unconditionally at module import time (every single
-    pipeline run), which meant paying its ~5s load + first-run model
-    download cost even on runs where Chatterbox succeeded for every
-    segment and Kokoro was never actually used."""
+    """Lazy-loads Kokoro only when actually needed as a fallback."""
     global _kokoro_tts, _kokoro_load_failed
     if _kokoro_tts is not None or _kokoro_load_failed:
         return _kokoro_tts
@@ -168,8 +170,9 @@ def _get_kokoro():
         _kokoro_tts = None
     return _kokoro_tts
 
+
 KOKORO_SAMPLE_RATE = 24000
-SILENCE_PAD_SEC = 0.25  # Badha diya 0.15 se 0.25. Dar ke liye pause zyada
+SILENCE_PAD_SEC = 0.25
 
 
 def add_mystery_pauses(text: str) -> str:
@@ -180,13 +183,17 @@ def add_mystery_pauses(text: str) -> str:
     spoken aloud as text. Real neural TTS models DO respect
     punctuation-driven pauses though, so we use an ellipsis (natural
     trailing-off pause) or a short standalone clause instead - actually
-    audible, not spoken as text."""
-    # "you too?" -> trailing pause via ellipsis
-    text = re.sub(r'you too\?', 'you too?..', text, flags=re.IGNORECASE)
-    # already-present ".." -> stretch into a longer natural pause
+    audible, not spoken as text.
+    """
+    # French-first pause shaping.
+    text = re.sub(r'\bmais\b', 'mais...', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bpourtant\b', 'pourtant...', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bvoici\b', 'voici...', text, flags=re.IGNORECASE)
+    text = re.sub(r'\ben silence\b', 'en silence...', text, flags=re.IGNORECASE)
+
+    # Already-present ".." -> stretch into a longer natural pause.
     text = re.sub(r'(?<!\.)\.\.(?!\.)', '...', text)
-    # "right now." -> comma-separated beat before continuing
-    text = re.sub(r'right now\.', 'right now...', text, flags=re.IGNORECASE)
+
     return text
 
 
@@ -217,11 +224,13 @@ def _synthesize_kokoro(text: str, voice: str, speed: float):
 
 
 def _synthesize(text: str, voice: str = "ff_siwis", speed: float = 0.95):
-    """Chatterbox first (dark, expressive delivery); falls back to Kokoro
-    on ANY failure - missing install, model load error, generation error -
-    so a single bad Chatterbox call can't kill a whole video. Returns
-    (audio, sample_rate, engine_used) so callers/logs can tell which engine
-    actually produced a given segment."""
+    """Chatterbox first for cloned expressive delivery.
+
+    If REQUIRE_CLONED_VOICE=true, any Chatterbox/voice-reference failure
+    raises an error instead of falling back to a different voice. This
+    protects channel branding because the user requested only their cloned
+    voice.
+    """
     if not text or not text.strip():
         raise ValueError("Text cannot be empty")
 
@@ -231,16 +240,22 @@ def _synthesize(text: str, voice: str = "ff_siwis", speed: float = 0.95):
         audio, sr = _synthesize_chatterbox(text_with_pauses)
         return audio, sr, "chatterbox"
     except Exception as e:
+        if REQUIRE_CLONED_VOICE:
+            raise RuntimeError(f"Cloned voice generation failed and fallback voice is disabled: {e}")
         logger.warning(f"Chatterbox synth failed ({e}) - falling back to Kokoro for this segment.")
         audio, sr = _synthesize_kokoro(text_with_pauses, voice, speed)
         return audio, sr, "kokoro"
 
 
-def generate_voice(text: str, voice: str = "ff_siwis", output_path: str = "output/voice.wav", speed: float = 0.95) -> str:
-    """USA Dark Science Voice: deep, slow, mysterious. Tries Chatterbox
-    (expressive) first, Kokoro (flat but reliable) as fallback."""
+def generate_voice(
+    text: str,
+    voice: str = "ff_siwis",
+    output_path: str = "output/voice.wav",
+    speed: float = 0.95,
+) -> str:
+    """French cloned dark-science voice: deep, slow, mysterious."""
     try:
-        logger.info(f"Generating DARK voiceover (voice='{voice}', speed={speed})...")
+        logger.info(f"Generating DARK cloned voiceover (voice='{voice}', speed={speed})...")
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         audio, sr, engine = _synthesize(text, voice, speed)
         sf.write(output_path, audio, sr)
@@ -258,8 +273,8 @@ def generate_voice_segments(
     speed: float = 0.95,     # only used if a segment falls back to Kokoro
 ) -> List[Dict]:
     """
-    Each scene gets its own audio, generated via Chatterbox (with mystery
-    pauses and dark-tone exaggeration) or Kokoro as a per-segment fallback.
+    Each scene gets its own audio, generated via Chatterbox using the cloned
+    voice reference. If REQUIRE_CLONED_VOICE=true, any failure stops the run.
     """
     os.makedirs(output_dir, exist_ok=True)
     segments = []
@@ -273,6 +288,8 @@ def generate_voice_segments(
         try:
             audio, sr, engine = _synthesize(caption, voice, speed)
         except Exception as e:
+            if REQUIRE_CLONED_VOICE:
+                raise RuntimeError(f"Segment {i+1} cloned voice generation failed: {e}")
             logger.error(f"Segment {i+1} TTS failed on both engines: {e} - inserting short silence instead")
             audio = np.zeros(int(KOKORO_SAMPLE_RATE * 1.5), dtype=np.float32)
             sr = KOKORO_SAMPLE_RATE
@@ -283,7 +300,12 @@ def generate_voice_segments(
         sf.write(path, audio, sr)
         duration = len(audio) / sr
 
-        segments.append({"path": path, "duration": duration, "caption": caption, "tts_engine": engine})
+        segments.append({
+            "path": path,
+            "duration": duration,
+            "caption": caption,
+            "tts_engine": engine,
+        })
         logger.info(f"Segment {i+1}/{len(scenes)} via {engine}: {duration:.2f}s - \"{caption[:50]}...\"")
 
     total = sum(s['duration'] for s in segments)
