@@ -22,6 +22,8 @@ What DOES apply and add value on top of the existing pipeline:
 """
 
 import os
+import re
+import unicodedata
 import logging
 from typing import Dict, List
 
@@ -43,10 +45,18 @@ SHORTS_HASHTAGS = ["#shorts", "#youtubeshorts", "#short"]
 _CURIOSITY_TRIGGERS = [
     "don't know", "doesn't know", "myth", "truth", "shocking",
     "secret", "discovered", "most people", "never knew",
+    # French-first triggers
+    "tu ne sais pas", "personne", "mythe", "vérité", "choquant",
+    "caché", "découvert", "la plupart", "jamais", "étrange",
+    "ton corps", "ton cerveau", "en silence",
 ]
+
 _POWER_WORDS = [
     "proven", "science", "expert", "revealed", "breakthrough",
     "hidden", "trick", "hack", "amazing", "incredible",
+    # French-first power words
+    "science", "prouvé", "révélé", "caché", "incroyable",
+    "étrange", "sombre", "secret", "cerveau", "sommeil", "stress",
 ]
 
 
@@ -147,14 +157,21 @@ def check_caption_pacing(scenes: List[Dict], audio_segments: List[Dict]) -> Dict
 # Shorts hashtags
 # ---------------------------------------------------------------------------
 
+def _to_hashtag(tag: str) -> str:
+    tag = str(tag or '').strip().lstrip('#')
+    tag = unicodedata.normalize('NFKD', tag).encode('ascii', 'ignore').decode('ascii')
+    tag = re.sub(r'[^A-Za-z0-9]+', '', tag)
+    return f"#{tag}" if tag else ""
+
+
 def generate_shorts_hashtags(topic_tags: List[str], n: int = 5) -> List[str]:
     """#shorts-family tags first (near-mandatory for Shorts shelf
     placement), then the top niche tags already computed by
     seo_generator/niche_strategy - avoids re-deriving tags from scratch."""
     result = list(SHORTS_HASHTAGS)
     for t in topic_tags:
-        tag = f"#{t}" if not t.startswith('#') else t
-        if tag.lower() not in (x.lower() for x in result):
+        tag = _to_hashtag(t)
+        if tag and tag.lower() not in (x.lower() for x in result):
             result.append(tag)
         if len(result) >= n:
             break
@@ -223,14 +240,14 @@ def build_shorts_report(script_data: Dict, audio_segments: List[Dict], topic_tag
 if __name__ == "__main__":
     import json
     test_scenes = [
-        {"visual": "human heart beating", "caption": "Your heart has its own brain."},
-        {"visual": "close up neurons", "caption": "It contains over 40000 neurons that operate independently of your actual brain."},
+        {"visual": "cerveau en macro sombre", "caption": "Ton cerveau fait quelque chose d'étrange pendant la nuit."},
+        {"visual": "neurones en gros plan", "caption": "Il trie tes souvenirs et prépare ton corps pour le réveil."},
     ]
     test_segments = [{"duration": 2.0}, {"duration": 3.0}]
     report = build_shorts_report(
-        {"hook": "Doctors don't want you to know this about your heart...", "scenes": test_scenes},
+        {"hook": "Ton cerveau fait ça en silence pendant la nuit...", "scenes": test_scenes},
         test_segments,
-        ["darkfacts", "heartfacts", "science"],
+        ["cerveau", "sommeil", "science"],
     )
-    print(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2, ensure_ascii=False))
     print(generate_srt(test_scenes, test_segments))
