@@ -7,6 +7,13 @@ google-genai>=0.5.0
 # the dark/mystery tone). Kokoro = automatic fallback if Chatterbox fails
 # to load or generate. See src/voice_generator.py for the fallback logic.
 chatterbox-tts>=0.1.7
+# Chatterbox needs this for its internal audio watermarker
+# (self.watermarker = perth.PerthImplicitWatermarker()). If this package is
+# missing or a name-clashing "perth" package gets installed instead,
+# ChatterboxTTS.from_pretrained() fails with:
+#   TypeError: 'NoneType' object is not callable
+# Pinning it explicitly here guarantees the real package is always present.
+resemble-perth>=1.0.1
 kokoro==0.9.4
 # Silences a FutureWarning from diffusers (used internally by Chatterbox):
 # "LoRACompatibleLinear is deprecated... switch to PEFT backend". Cosmetic
@@ -22,11 +29,17 @@ torchaudio>=2.1.0
 transformers>=4.40.0
 
 # Video Processing
+# MoviePy 2.x breaks `from moviepy.editor import ...` (the .editor
+# subpackage was removed) and changes fx import paths. Pinning to 1.x
+# until the codebase migrates to MoviePy 2.x API. See:
+#   https://zulko.github.io/moviepy/install.html#migration-from-1-x-to-2-x
 moviepy>=1.0.3,<2.0.0
 imageio-ffmpeg>=0.4.8
 
 # Image Processing
-Pillow>=9.0.0,<10.0.0
+# Pillow 10+ removed Image.ANTIALIAS; this codebase already uses
+# Image.LANCZOS everywhere, so 10.x is fully compatible.
+Pillow>=10.0.0
 numpy>=1.24.0
 
 # HTTP/API Requests
