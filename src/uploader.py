@@ -1,11 +1,13 @@
 import os
+import json
 import logging
 import time
+import hashlib
 import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
-from niche_strategy import _make_seo_title
+import requests
 from seo_generator import generate_description
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,6 +29,9 @@ RETRY_DELAY = 5
 # changes again, re-verify this setting - COPPA fines are no joke.
 # ---------------------------------------------------------------------------
 MADE_FOR_KIDS = os.environ.get("YT_MADE_FOR_KIDS", "false").lower() == "true"
+YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "private").strip().lower()
+if YT_PRIVACY_STATUS not in {"private", "unlisted", "public"}:
+    raise ValueError("YT_PRIVACY_STATUS must be private, unlisted, or public")
 
 
 def _build_youtube_description(script_data: dict, tags: list) -> str:
@@ -37,8 +42,117 @@ def _build_youtube_description(script_data: dict, tags: list) -> str:
     return generate_description(script_data, tags)
 
 
+def _build_facebook_description(script_data: dict, tags: list) -> str:
+    """Facebook Reels description:
+    - Facebook's own guidelines warn that MORE THAN 5 hashtags can
+      suppress reach — so we use MAX 3 (sweet spot for Reels).
+    - Hook in first line (shows before 'See more' truncation).
+    - Clean CTA drives the follow/share action."""
+    hook = script_data.get('hook', '')
+    cta = script_data.get('cta', 'Abonnez-vous pour plus de science expliquée simplement.')
+    description = script_data.get('description', '')
+
+    # Facebook 2026: the algorithm categorises Reels mainly via NLP on the
+    # caption text (hook + description above), with hashtags as a secondary
+    # signal. So we (a) keep the strict 3-hashtag limit (>5 suppresses reach)
+    # and (b) pick the most topic-SPECIFIC tags first, dropping generic
+    # filler like "facts"/"science"/"shorts" that add no categorisation value
+    # on Facebook. Falls back to the first tags only if nothing specific is
+    # left, so a Reel is never posted with zero hashtags.
+    _generic = {"facts", "science", "shorts", "viral", "fyp", "reels",
+                "education", "trending", "video", "youtube"}
+    specific = [t for t in tags if str(t).lstrip("#").lower() not in _generic]
+    chosen = (specific or tags)[:3]
+    fb_hashtags = ' '.join(f"#{str(t).lstrip('#')}" for t in chosen)
+
+    return (
+        f"{hook}\n\n"
+        f"{description}\n\n"
+        f"{cta}\n\n"
+        f"{fb_hashtags}"
+    )[:2200]
+
+
+VIDEO_HISTORY_PATH = os.environ.get("VIDEO_HISTORY_PATH", "data/video_history.json")
+UPLOAD_STATE_PATH = os.environ.get("UPLOAD_STATE_PATH", "data/upload_state.json")
+
+
+def _load_upload_state() -> dict:
+    if not os.path.exists(UPLOAD_STATE_PATH):
+        return {}
+    try:
+        with open(UPLOAD_STATE_PATH, encoding="utf-8") as file_handle:
+            data = json.load(file_handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load upload state: %s", exc)
+        return {}
+
+
+def _save_upload_state(state: dict) -> None:
+    os.makedirs(os.path.dirname(UPLOAD_STATE_PATH) or ".", exist_ok=True)
+    temp_path = UPLOAD_STATE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file_handle:
+        json.dump(state, file_handle, indent=2)
+    os.replace(temp_path, UPLOAD_STATE_PATH)
+
+
+def _content_fingerprint(script_data: dict) -> str:
+    """Stable identity for a script, independent of temporary media paths."""
+    material = "|".join(
+        str(script_data.get(key, "")).strip().lower()
+        for key in ("topic", "title", "voiceover", "hook")
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _load_upload_history() -> list:
+    if not os.path.exists(VIDEO_HISTORY_PATH):
+        return []
+    try:
+        with open(VIDEO_HISTORY_PATH, encoding="utf-8") as file_handle:
+            data = json.load(file_handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load upload history: %s", exc)
+        return []
+
+
+def _existing_youtube_upload(script_data: dict) -> str | None:
+    """Return a prior upload ID for the exact script, preventing retry duplicates."""
+    fingerprint = _content_fingerprint(script_data)
+    state = _load_upload_state().get(fingerprint, {})
+    if state.get("status") == "completed" and state.get("youtube_video_id"):
+        return str(state["youtube_video_id"])
+    if state.get("status") == "started":
+        # We cannot safely know whether a timeout happened before or after
+        # YouTube accepted the binary. Block rather than risk a duplicate.
+        raise RuntimeError(
+            "An earlier YouTube upload has unknown completion state for this script. "
+            "Review YouTube Studio, then clear or resolve its data/upload_state.json record."
+        )
+    for item in reversed(_load_upload_history()):
+        if item.get("content_fingerprint") == fingerprint and item.get("youtube_video_id"):
+            return str(item["youtube_video_id"])
+    return None
+
+
+def _already_uploaded_to_facebook(script_data: dict) -> bool:
+    """Prevent a duplicate Facebook Reel for an already recorded script."""
+    fingerprint = _content_fingerprint(script_data)
+    return any(
+        item.get("content_fingerprint") == fingerprint and item.get("facebook_success")
+        for item in _load_upload_history()
+    )
+
+
 def _upload_youtube(video_path, thumb_path, script_data, tags):
     """Returns (success: bool, video_id: str|None)."""
+    existing_video_id = _existing_youtube_upload(script_data)
+    if existing_video_id:
+        logger.warning("Duplicate script blocked; existing YouTube upload: %s", existing_video_id)
+        return True, existing_video_id
+
     google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
     google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
     refresh_token = os.environ.get("REFRESH_TOKEN")
@@ -55,7 +169,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
         return False, None
 
     title = script_data.get('title', 'Untitled')
-    enhanced_title = _make_seo_title(title, script_data.get('topic', title))
+    enhanced_title = title  # already selected/scored by generate_seo_package
     desc = _build_youtube_description(script_data, tags)
 
     # NOTE: captions.insert (SRT upload) and commentThreads.insert (posting
@@ -87,14 +201,23 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             # topic/category-aware tags from niche_strategy.generate_seo_tags,
             # which also helps SEO reach and avoids duplicate-metadata spam risk.
             'tags': tags,
-            'defaultLanguage': 'fr',
-            'defaultAudioLanguage': 'fr',
+            'defaultLanguage': 'en',
+            'defaultAudioLanguage': 'en',
         },
         'status': {
-            'privacyStatus': 'public',
+            'privacyStatus': YT_PRIVACY_STATUS,
             'selfDeclaredMadeForKids': MADE_FOR_KIDS,
         }
     }
+
+    fingerprint = _content_fingerprint(script_data)
+    upload_state = _load_upload_state()
+    upload_state[fingerprint] = {
+        "status": "started",
+        "title": enhanced_title,
+        "started_at": time.time(),
+    }
+    _save_upload_state(upload_state)
 
     logger.info("Uploading to YouTube...")
     yt_video_id = None
@@ -109,6 +232,15 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             )
             res = req.execute()
             yt_video_id = res.get('id')
+            if not yt_video_id:
+                raise RuntimeError(f"YouTube upload returned no video ID: {res}")
+            upload_state[fingerprint] = {
+                "status": "completed",
+                "title": enhanced_title,
+                "youtube_video_id": yt_video_id,
+                "completed_at": time.time(),
+            }
+            _save_upload_state(upload_state)
             logger.info(f"YouTube upload successful: https://youtu.be/{yt_video_id}")
             youtube_success = True
 
@@ -134,7 +266,7 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
                             "snippet": {
                                 "videoId": yt_video_id,
                                 "language": "fr",
-                                "name": "Français",
+                                "name": "French",
                                 "isDraft": False,
                             }
                         },
@@ -187,8 +319,103 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
     return youtube_success, yt_video_id
 
 
+def _upload_facebook_reels(video_path, script_data, tags):
+    """
+    FIX: previously this posted to /{page-id}/videos as a plain video post.
+    Facebook's 2026 recommendation algorithm gives materially better organic
+    reach to content published through the actual Reels pipeline. This now
+    uses the correct 3-phase Reels publishing flow:
+      1. upload_phase=start   -> get video_id + upload_url
+      2. POST binary to upload_url (rupload host)
+      3. upload_phase=finish  -> attach description/hashtags and publish
+    Returns success: bool.
+    """
+    # Facebook Reels has no equivalent private-review workflow in this code.
+    # Keep it opt-in so a private YouTube review run never publishes a public
+    # Reel by surprise.
+    if os.environ.get("FB_UPLOAD_ENABLED", "false").lower() != "true":
+        logger.info("Facebook upload disabled (set FB_UPLOAD_ENABLED=true to publish a Reel).")
+        return False
+
+    fb_token = os.environ.get("FB_ACCESS_TOKEN")
+    fb_page = os.environ.get("FB_PAGE_ID")
+
+    if not fb_token or not fb_page:
+        logger.warning("FB_ACCESS_TOKEN or FB_PAGE_ID missing - Facebook upload skipped")
+        return False
+
+    # Duplicate prevention: if this exact video title was already successfully
+    # posted to Facebook in a previous run, skip it rather than uploading again.
+    if _already_uploaded_to_facebook(script_data):
+        logger.info(f"Facebook: '{script_data.get('title')}' already uploaded — skipping duplicate.")
+        return True  # treat as success so pipeline doesn't retry/fail
+
+    # Max 3 hashtags — Facebook's own algorithm penalises Reels with >5 hashtags
+    description = _build_facebook_description(script_data, tags)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            # ---- Phase 1: start ----
+            start_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={"upload_phase": "start", "access_token": fb_token},
+                timeout=30,
+            )
+            start_data = start_resp.json()
+            if "error" in start_data or "video_id" not in start_data:
+                raise RuntimeError(f"Reels start phase failed: {start_data}")
+
+            video_id = start_data["video_id"]
+            upload_url = start_data["upload_url"]
+
+            # ---- Phase 2: upload binary ----
+            file_size = os.path.getsize(video_path)
+            with open(video_path, "rb") as f:
+                upload_resp = requests.post(
+                    upload_url,
+                    headers={
+                        "Authorization": f"OAuth {fb_token}",
+                        "offset": "0",
+                        "file_size": str(file_size),
+                    },
+                    data=f,
+                    timeout=300,
+                )
+            upload_data = upload_resp.json() if upload_resp.content else {}
+            if upload_resp.status_code != 200 or upload_data.get("success") is False:
+                raise RuntimeError(f"Reels upload phase failed: {upload_resp.status_code} {upload_data}")
+
+            # ---- Phase 3: finish/publish ----
+            finish_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={
+                    "upload_phase": "finish",
+                    "video_id": video_id,
+                    "description": description,
+                    "video_state": "PUBLISHED",
+                    "access_token": fb_token,
+                },
+                timeout=60,
+            )
+            finish_data = finish_resp.json()
+            if finish_resp.status_code == 200 and finish_data.get("success", True) and "error" not in finish_data:
+                logger.info(f"Facebook Reels published successfully: video_id={video_id}")
+                return True
+            else:
+                raise RuntimeError(f"Reels finish phase failed: {finish_data}")
+
+        except Exception as e:
+            logger.warning(f"Facebook Reels upload attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
+            continue
+
+    logger.error("Facebook Reels upload failed after all retries")
+    return False
+
+
 def upload_all(video_path, thumb_path, script_data):
-    """Upload video to YouTube only (Facebook/Reels upload removed - YouTube-only pipeline)."""
+    """Upload video to YouTube and Facebook Reels with comprehensive error handling."""
 
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -196,26 +423,30 @@ def upload_all(video_path, thumb_path, script_data):
     if not script_data or 'title' not in script_data:
         raise ValueError("Invalid script data - missing title")
 
-    title = script_data.get('title', 'Sans titre')
+    title = script_data.get('title', 'Untitled')
     # Tags come from script_data (set by main.py via niche_strategy.generate_seo_tags).
     # Fallback below only fires if that ever comes back empty - matches the
     # current dark-facts niche, not the old parenting-channel tags.
-    tags = script_data.get('tags') or ['faits', 'shorts', 'science', 'faitssombres', 'faitscorps']
+    tags = script_data.get('tags') or ['facts', 'shorts', 'science', 'darkfacts', 'bodyfacts']
 
     logger.info(f"Starting upload process for: {title}")
     logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
+    logger.info(f"YouTube privacy status = {YT_PRIVACY_STATUS}")
     logger.info(f"SEO tags for this video: {tags}")
 
     youtube_success, yt_video_id = _upload_youtube(video_path, thumb_path, script_data, tags)
+    facebook_success = _upload_facebook_reels(video_path, script_data, tags)
 
     logger.info(f"YouTube Upload: {'SUCCESS' if youtube_success else 'FAILED/SKIPPED'}")
     if yt_video_id:
         logger.info(f"  URL: https://youtu.be/{yt_video_id}")
+    logger.info(f"Facebook Upload: {'SUCCESS' if facebook_success else 'FAILED/SKIPPED'}")
 
-    if not youtube_success:
-        raise RuntimeError("YouTube upload failed")
+    if not (youtube_success or facebook_success):
+        raise RuntimeError("Both YouTube and Facebook uploads failed")
 
     return {
         "youtube_success": youtube_success,
         "youtube_video_id": yt_video_id,
+        "facebook_success": facebook_success,
     }

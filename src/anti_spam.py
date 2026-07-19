@@ -7,6 +7,21 @@ import hashlib
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Words that are expected to repeat across EVERY video in this niche (brand
+# hooks, body/science vocabulary, filler). Counting these toward similarity
+# would flag two genuinely different topics as "near-duplicate" just because
+# they're both Body Glitch explainers — the opposite of what we want. Only
+# the topic-specific vocabulary should drive the similarity score.
+_NICHE_STOPWORDS = {
+    "le", "la", "les", "un", "une", "des", "de", "du", "dans", "sur", "pour", "avec", "et", "ou",
+    "ce", "ces", "cette", "ça", "est", "sont", "votre", "vous", "ton", "ta", "tes", "notre", "nous",
+    "pourquoi", "comment", "quand", "corps", "cerveau", "science", "explique", "réflexe", "shorts", "vidéo",
+}# Fuzzy word-overlap similarity only looks at a recent window. Two videos
+# independently landing on similar niche phrasing months apart is normal
+# and not spam; the real spam risk is repeating something recently. Exact
+# duplicate checks (hash/title match) still run against the FULL history.
+_SIMILARITY_WINDOW = 100
+
 class AntiSpamSystem:
     """
     Comprehensive anti-spam system to prevent YouTube spam flags.
@@ -35,12 +50,14 @@ class AntiSpamSystem:
         
         # 2. Check similarity to previous videos
         similarity_issues = self._check_content_similarity(video, previous_videos)
-        scores['similarity_issues'] = len(similarity_issues)
+        scores['similarity_issues'] = sum(1 for i in similarity_issues if i.startswith("🚨"))
+        scores['similarity_warnings'] = sum(1 for i in similarity_issues if i.startswith("⚠️"))
         risks.extend(similarity_issues)
         
         # 3. Check for duplicate metadata
         duplicate_issues = self._check_duplicates(video, previous_videos)
-        scores['duplicate_issues'] = len(duplicate_issues)
+        scores['duplicate_issues'] = sum(1 for i in duplicate_issues if i.startswith("🚨"))
+        scores['duplicate_warnings'] = sum(1 for i in duplicate_issues if i.startswith("⚠️"))
         risks.extend(duplicate_issues)
         
         # 4. Check title quality
@@ -100,7 +117,7 @@ class AntiSpamSystem:
         
         current_hash = self._get_content_hash(video)
         
-        for prev_video in previous_videos[-10:]:  # Check last 10 videos
+        for prev_video in previous_videos:  # exact-duplicate hash: full channel history
             prev_hash = self._get_content_hash(prev_video)
             
             if current_hash == prev_hash:
@@ -108,8 +125,15 @@ class AntiSpamSystem:
                     f"🚨 CRITICAL: Content is an exact duplicate of a recent video "
                     f"'{prev_video.get('title', 'Unknown')[:30]}...'"
                 )
-                continue
-            
+
+        # Fuzzy word-overlap similarity: recent window only. Two independently
+        # generated "body glitch" scripts converging on similar phrasing months
+        # apart is normal for a single-niche channel, not spam — see
+        # _SIMILARITY_WINDOW note above.
+        for prev_video in previous_videos[-_SIMILARITY_WINDOW:]:
+            if self._get_content_hash(prev_video) == current_hash:
+                continue  # already reported above
+
             similarity = self._calculate_similarity(video, prev_video)
             
             if similarity > 0.85:
@@ -134,7 +158,7 @@ class AntiSpamSystem:
         current_title = video.get('title', '').lower().strip()
         current_desc = video.get('voiceover', '')[:100].lower().strip()
         
-        for prev_video in previous_videos[-5:]:
+        for prev_video in previous_videos:  # full channel history
             prev_title = prev_video.get('title', '').lower().strip()
             prev_desc = prev_video.get('voiceover', '')[:100].lower().strip()
             
@@ -216,19 +240,31 @@ class AntiSpamSystem:
     def _calculate_overall_spam_risk(self, scores: Dict) -> str:
         """
         Calculate overall spam risk level.
+
+        Only EXACT duplicates (identical title, identical opening line, or
+        identical content hash) auto-trigger CRITICAL. Soft "similar but not
+        identical" warnings — expected on a single-niche channel where every
+        video shares brand vocabulary and a 5-word title format — only add
+        to the weighted score instead of hard-blocking a legitimately unique
+        video.
         """
         keyword_score = scores.get('keyword_stuffing_score', 0)
         bait_score = scores.get('engagement_bait_score', 0)
-        similarity = scores.get('similarity_issues', 0)
-        duplicates = scores.get('duplicate_issues', 0)
+        similarity = scores.get('similarity_issues', 0)          # exact/85%+ matches
+        similarity_warnings = scores.get('similarity_warnings', 0)  # 70-85% soft
+        duplicates = scores.get('duplicate_issues', 0)            # exact title/desc match
+        duplicate_warnings = scores.get('duplicate_warnings', 0)  # similar-title soft
         
         # Weight the scores
-        weighted_risk = (keyword_score * 0.4) + (bait_score * 0.3) + \
-                       (similarity * 20) + (duplicates * 30)
+        weighted_risk = (
+            (keyword_score * 0.4) + (bait_score * 0.3)
+            + (similarity * 20) + (duplicates * 30)
+            + (similarity_warnings * 8) + (duplicate_warnings * 8)
+        )
         
-        if weighted_risk > 60 or duplicates > 0:
+        if weighted_risk > 60 or duplicates > 0 or similarity > 0:
             return 'CRITICAL'
-        elif weighted_risk > 40 or similarity > 1:
+        elif weighted_risk > 40 or similarity_warnings > 2 or duplicate_warnings > 2:
             return 'HIGH'
         elif weighted_risk > 20:
             return 'MEDIUM'
@@ -267,10 +303,12 @@ class AntiSpamSystem:
     
     def _string_similarity(self, s1: str, s2: str) -> float:
         """
-        Calculate string similarity using word overlap.
+        Calculate string similarity using word overlap, ignoring words that
+        are expected to repeat in every video of this niche (see
+        _NICHE_STOPWORDS) so only topic-specific vocabulary counts.
         """
-        words1 = set(s1.split())
-        words2 = set(s2.split())
+        words1 = {w for w in s1.split() if w not in _NICHE_STOPWORDS}
+        words2 = {w for w in s2.split() if w not in _NICHE_STOPWORDS}
         
         if not words1 or not words2:
             return 0
@@ -282,16 +320,16 @@ class AntiSpamSystem:
     
     def _are_titles_similar(self, title1: str, title2: str) -> bool:
         """
-        Check if titles are too similar.
+        Check if titles are too similar (ignoring shared niche/brand words —
+        see _NICHE_STOPWORDS).
         """
-        # Simple check: same words in different order
-        words1 = set(title1.split())
-        words2 = set(title2.split())
+        words1 = {w for w in title1.split() if w not in _NICHE_STOPWORDS}
+        words2 = {w for w in title2.split() if w not in _NICHE_STOPWORDS}
         
         if not words1 or not words2:
             return False
         
-        # If 70%+ words are same, titles are similar
+        # If 70%+ of the topic-specific words are the same, titles are similar
         common = len(words1.intersection(words2))
         total = len(words1.union(words2))
         

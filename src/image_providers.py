@@ -179,13 +179,23 @@ def gen_ai_horde(prompt, seed, scene_text=None):
     # Anonymous requests share a dynamic, demand-based max PIXEL-AREA cap,
     # expressed by AI Horde as "requests over NxN" (i.e. width*height must
     # stay under N*N). Observed caps in practice range ~576x576 (331,776px)
-    # up to ~669x669 (447,561px), and fluctuate run to run with load. Try
-    # progressively smaller sizes - multiples of 64, as required by the
+    # up to ~669x669 (447,561px), and fluctuate run to run with load.
+    #
+    # HD tip: that cap applies to the *anonymous* "0000000000" key. A free
+    # AI Horde account (https://aihorde.net/register - no card, just an
+    # email) gets a real API key with a much higher priority + resolution
+    # allowance, and costs nothing. Set it as the AI_HORDE_API_KEY secret
+    # in your GitHub repo (Settings -> Secrets and variables -> Actions) and
+    # this function picks it up automatically (falls back to anonymous if
+    # unset) - that alone is usually enough to get the top (768x1344) tier
+    # below through consistently instead of falling back to the small ones.
+    #
+    # Try progressively smaller sizes - multiples of 64, as required by the
     # underlying SD models - until one fits under whatever the current cap
-    # happens to be. All three tiers below stay under even the lowest
-    # observed cap except tier 1, which is worth trying first for the
-    # common case where demand (and therefore the cap) is higher.
-    size_tiers = [(448, 768), (384, 640), (320, 512)]
+    # happens to be. The first two tiers are HD-ish (close to the final
+    # 1080x1920 Shorts canvas); the rest are the original small fallbacks
+    # for when demand is high and even a registered key gets capped.
+    size_tiers = [(768, 1344), (640, 1152), (576, 1024), (448, 768), (384, 640), (320, 512)]
 
     submit = None
     last_size_err = None
@@ -194,7 +204,12 @@ def gen_ai_horde(prompt, seed, scene_text=None):
             "https://aihorde.net/api/v2/generate/async",
             json={
                 "prompt": text,
-                "params": {"width": width, "height": height, "steps": 20, "n": 1},
+                "params": {
+                    "width": width, "height": height, "steps": 30, "n": 1,
+                    "sampler_name": "k_euler_a",
+                    "cfg_scale": 7,
+                },
+                "negative_prompt": "blurry, soft focus, low resolution, dull, dark, grainy, distorted, watermark, text, logo",
                 "nsfw": False,
                 "censor_nsfw": True,
             },
@@ -220,15 +235,24 @@ def gen_ai_horde(prompt, seed, scene_text=None):
     # Anonymous key = lowest queue priority, so this can take a while. Poll
     # for up to ~60s (12 x 5s); if it's not done by then, give up and let
     # the next provider in the chain take over rather than blocking.
-    for _ in range(12):
-        time.sleep(5)
+    max_wait_seconds = int(os.environ.get("AI_HORDE_MAX_WAIT", "300"))
+    poll_interval = 5
+    for _ in range(max(1, max_wait_seconds // poll_interval)):
+        time.sleep(poll_interval)
         check = requests.get(f"https://aihorde.net/api/v2/generate/check/{job_id}", timeout=15).json()
         if check.get("done"):
             break
         if check.get("faulted"):
             raise RuntimeError("AI Horde: job faulted")
     else:
-        raise RuntimeError("AI Horde: timed out waiting in queue (anonymous priority)")
+        try:
+            requests.delete(
+                f"https://aihorde.net/api/v2/generate/status/{job_id}",
+                headers=headers, timeout=15,
+            )
+        except Exception:
+            pass
+        raise RuntimeError(f"AI Horde: timed out after {max_wait_seconds} seconds")
 
     status = requests.get(f"https://aihorde.net/api/v2/generate/status/{job_id}", timeout=15).json()
     generations = status.get("generations", [])
@@ -337,9 +361,9 @@ def gen_TEMPLATE(prompt, seed, scene_text=None):
 # 50 tak yahan providers add kar sakte hain — bas ek line.
 # ---------------------------------------------------------------------------
 PROVIDER_REGISTRY = [
+    {"name": "AI-Horde",           "env_keys": [],                       "generate": gen_ai_horde},
     {"name": "Pollinations-flux",  "env_keys": [],                       "generate": gen_pollinations_flux},
     {"name": "Pollinations-turbo", "env_keys": [],                       "generate": gen_pollinations_turbo},
-    {"name": "AI-Horde",           "env_keys": [],                       "generate": gen_ai_horde},
     {"name": "HuggingFace",        "env_keys": ["HF_API_KEY"],           "generate": gen_huggingface},
     {"name": "Gemini",             "env_keys": ["GEMINI_API_KEY"],       "generate": gen_gemini},
     {"name": "DeepAI",             "env_keys": ["DEEPAI_API_KEY"],       "generate": gen_deepai},
@@ -360,3 +384,4 @@ def available_providers():
     """Sirf wo providers return karta hai jinke required env vars set hain
     (no-key providers hamesha available hote hain)."""
     return [p for p in PROVIDER_REGISTRY if all(os.environ.get(k) for k in p["env_keys"])]
+              

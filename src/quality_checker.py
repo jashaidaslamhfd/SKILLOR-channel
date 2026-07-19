@@ -25,6 +25,7 @@ quality_result looks like:
 """
 
 import logging
+import os
 from typing import Dict
 
 from script_generator import (
@@ -35,8 +36,11 @@ from script_generator import (
 logger = logging.getLogger(__name__)
 
 # Minimum overall_quality score (0-100) required for a script to be approved.
-# Can be overridden via QUALITY_APPROVAL_THRESHOLD env var if needed later.
-APPROVAL_THRESHOLD = 60
+# Overridable via the QUALITY_APPROVAL_THRESHOLD env var (falls back to 60).
+try:
+    APPROVAL_THRESHOLD = int(os.environ.get("QUALITY_APPROVAL_THRESHOLD", "60"))
+except ValueError:
+    APPROVAL_THRESHOLD = 60
 
 
 class QualityChecker:

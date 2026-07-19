@@ -9,7 +9,11 @@ import time
 import logging
 import re
 from typing import Dict, List, Optional, Tuple
-from groq import Groq, BadRequestError
+try:
+    from groq import Groq, BadRequestError
+except ImportError:  # lets offline validation/tests import this module
+    Groq = None
+    BadRequestError = Exception
 
 # ============================================
 # LOGGING CONFIGURATION
@@ -23,146 +27,96 @@ logger = logging.getLogger(__name__)
 # ============================================
 # CONSTANTS
 # ============================================
+# One unified policy for a 40–55 second Body Glitch Short. Eight scenes give
+# enough room for a complete, accurate explanation without rushed claims.
 MIN_SCENES = 8
-MAX_SCENES = 12
-MIN_WORDS = 130
-MAX_WORDS = 170
+MAX_SCENES = 8
+# 96 words at the cloned-voice pace reliably reaches ~40 seconds while
+# leaving normal language room; forcing 104+ made the LLM pad or fail scenes.
+MIN_WORDS = 88
+MAX_WORDS = 118
 MAX_RETRIES = 3
-TEMPERATURE = 0.7
-MAX_TOKENS = 2000
+SCRIPT_POLICY_VERSION = "BODY_GLITCH_V3_RELAXED_VALIDATION"
+TEMPERATURE = 0.65
+MAX_TOKENS = 1400
 
+# A fast, clear opening that comfortably fits in the first 2–3 seconds.
+HOOK_MIN_WORDS = 5
+HOOK_MAX_WORDS = 9
+MIN_SCENE_WORDS = 11
+MAX_SCENE_WORDS = 17
+
+# A title such as "Why Got Fired Matters" is grammatically short but gives
+# viewers no scientific subject. Require a concrete channel-relevant anchor.
+TITLE_TOPIC_ANCHORS = {
+    "cerveau", "corps", "sommeil", "mémoire", "coeur", "cœur", "yeux", "oeil", "œil",
+    "ventre", "nerf", "hormone", "cellule", "sang", "immunité", "santé", "science",
+    "espace", "nasa", "planète", "océan", "physique", "technologie", "robot", "ia",
+    "anatomie", "biologie", "psychologie", "génétique", "virus",
+}
 # ============================================
 # 1. SYSTEM PROMPT (NATIVE TONE + RETENTION)
 # ============================================
 
 def _get_system_prompt() -> str:
-    """
-    2026 System Prompt with NATIVE ENGLISH TONE and RETENTION FOCUS.
-    """
-    return """Tu es un Stratège Réseaux Sociaux de tout premier plan pour 2026, spécialisé dans les YouTube Shorts en FRANÇAIS.
+    """French editorial standard for a France-first science Shorts channel."""
+    return """Tu écris des YouTube Shorts en français naturel, fluide et idiomatique,
+sur la science, le corps humain et le cerveau, pour des adultes francophones.
 
-**LANGUE OBLIGATOIRE : Tout le contenu généré (title, hook, caption de chaque scène, cta, description) DOIT être écrit en FRANÇAIS naturel. N'écris JAMAIS en anglais.**
-
-TON EXPERTISE :
-- Créer des scripts VIRAUX avec un taux de rétention de 70%+
-- Écrire en FRANÇAIS NATUREL et CONVERSATIONNEL (France)
-- Des Hooks "Pattern Interrupt" qui arrêtent le scroll
-- Un rythme psychologique qui garde les spectateurs engagés
-
-**RÈGLES CRITIQUES - TON NATUREL :**
-1. Écris comme un HUMAIN qui parle à un AMI - pas comme une IA
-2. Utilise des CONTRACTIONS et un langage parlé naturel : "c'est", "tu vas", "ça"
-3. Utilise des EXPRESSIONS IDIOMATIQUES : "ça va te scier", "ça fait flipper", "ça tombe sous le sens"
-4. ÉVITE LES MOTS ROBOTIQUES : "ainsi", "par conséquent", "en effet", "de surcroît"
-5. Utilise un LANGAGE COURANT : "honnêtement", "sérieusement", "carrément"
-6. Reste NATUREL - lu à voix haute, ça doit sonner comme une vraie personne
-
-**RÈGLES DE RÉTENTION (CRITIQUE) :**
-1. **Hook Pattern Interrupt** : Les 3 premières secondes doivent être CHOQUANTES ou CONTRE-INTUITIVES
-   - "Ton cœur te ment en ce moment même..."
-   - "Ceci se produit dans ton cerveau chaque nuit..."
-
-2. **La "règle des 3 secondes"** : Chaque scène doit avoir un MICRO-HOOK
-   - Commence chaque scène avec de la tension
-   - Termine chaque scène par un CLIFFHANGER
-   - Exemple : "...mais ce n'est que la moitié de l'histoire"
-
-3. **Langage "TU"** : Utilise une adresse personnelle directe
-   - "Ton cerveau", "Ton cœur", "Tu ressens"
-   - Crée une connexion émotionnelle
-
-4. **Arc émotionnel** :
-   - Hook (Curiosité/Choc) → Énoncer le problème → Révéler la solution → Boucler vers le hook
-
-5. **STRUCTURE OBLIGATOIRE EN 4 PARTIES** :
-   - PARTIE 1 - HOOK : Phrase d'ouverture choquante/contre-intuitive (première scène)
-   - PARTIE 2 - PROBLÈME : Énonce clairement ce qui ne va pas / ce que le spectateur ignore
-   - PARTIE 3 - SOLUTION : Révèle la réponse, la solution, ou la vérité derrière le problème
-   - PARTIE 4 - BOUCLE : La dernière ligne doit faire écho aux mots ou images du hook,
-     pour que la vidéo puisse se relancer en boucle de façon fluide (favorise le rewatch)
-
-6. **Outro en boucle** : La fin doit naturellement ramener au début
-   - Encourage à revoir la vidéo
-   - La dernière caption doit faire écho à une phrase ou une image du hook
-
-**FORMAT DE SORTIE :**
-Retourne UNIQUEMENT du JSON valide avec cette structure exacte, tout le texte EN FRANÇAIS :
-{
-  "title": "Titre accrocheur EN FRANÇAIS (moins de 55 caractères)",
-  "hook": "Le hook des 3 premières secondes EN FRANÇAIS (la partie la plus importante)",
-  "scenes": [
-    {
-      "visual": "Description visuelle cinématographique (5-8 mots)",
-      "caption": "Texte parlé percutant EN FRANÇAIS (15-20 mots)"
-    }
-  ],
-  "cta": "Appel à l'action naturel EN FRANÇAIS",
-  "description": "Description de la vidéo en 1-2 phrases, EN FRANÇAIS"
-}
-
-RAPPEL : Écris comme un HUMAIN, pas comme une IA. Sois NATUREL. Sois CONVERSATIONNEL. Concentre-toi sur la RÉTENTION. TOUT LE TEXTE DOIT ÊTRE EN FRANÇAIS.
+RÈGLES DE QUALITÉ NON NÉGOCIABLES :
+- Réponds intégralement en français de France, sans anglicismes ni traduction littérale.
+- Explique une idée vérifiable et utile par vidéo, dans une langue simple et orale.
+- Promets une curiosité précise dès l'ouverture, puis apporte réellement la réponse.
+- N'invente jamais études, chiffres, citations, diagnostics, remèdes, dangers ou conseils médicaux.
+- Évite la peur, l'urgence artificielle, les secrets, et les tournures clickbait.
+- Chaque scène doit apporter une information nouvelle. Écris pour l'oral : phrases courtes et concrètes.
+- Le CTA reste naturel et discret ; il ne doit pas être répété dans la narration.
+- Retourne uniquement un JSON valide, sans Markdown ni commentaire.
 """
-
 
 # ============================================
 # 2. PROMPT GENERATION
 # ============================================
 
 def _default_prompt(topic: str) -> str:
-    """
-    Default prompt with NATIVE TONE and RETENTION enforcement.
-    """
+    """Build a French-France short-form script brief."""
+    body_glitch_mode = os.environ.get("CONTENT_SERIES", "").lower() == "body_glitches_fr"
+    series_rules = """
+RÈGLES SÉRIE « RÉFLEXES DU CORPS » :
+- Traite un phénomène quotidien, familier et à faible risque.
+- Adopte un ton calme, curieux et fiable ; pas de diagnostic, de traitement ou d'alarmisme.
+- Explique ce qui se produit habituellement, avec une conclusion simple et prudente.
+- Si nécessaire, rappelle que des symptômes nouveaux, persistants, sévères ou inquiétants justifient l'avis d'un professionnel qualifié.
+""" if body_glitch_mode else ""
     return f"""
-Crée un script viral À FORTE RÉTENTION de 45 secondes pour YouTube Shorts sur : "{topic}"
+Crée un YouTube Short original de 40 à 55 secondes sur ce sujet :
+SUJET : {topic}
+{series_rules}
 
-**TOUT LE CONTENU DOIT ÊTRE ÉCRIT EN FRANÇAIS. N'écris jamais en anglais.**
+Utilise EXACTEMENT huit scènes et retourne le schéma JSON ci-dessous.
 
-**CRITIQUE - TON FRANÇAIS NATUREL :**
-- Écris comme un HUMAIN qui parle à un ami
-- Utilise des tournures naturelles : "c'est", "tu vas", "ça"
-- Utilise des expressions : "ça va te scier", "ça fait flipper", "ça tombe sous le sens"
-- ÉVITE : "ainsi", "par conséquent", "en effet", "de surcroît"
-- Doit sonner NATUREL à voix haute
+ARC NARRATIF :
+1. ACCROCHE — scène 1 ; curiosité concrète.
+2. QUESTION — scène 2 ; pourquoi cela compte.
+3. CONFUSION — scène 3 ; idée reçue ou expérience familière.
+4. EXPLICATION — scènes 4–5 ; mécanisme clair, étape par étape.
+5. CONTEXTE — scène 6 ; ce qui est habituel, sans diagnostiquer.
+6. RÉPONSE — scène 7 ; explication utile.
+7. BOUCLE — scène 8 ; retour satisfaisant à l'accroche.
 
-**EXIGENCES DU SCRIPT :**
+RÈGLES DE FORMAT :
+- Total des légendes parlées : {MIN_WORDS}–{MAX_WORDS} mots français.
+- Scène 1 : {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} mots. Scènes 2–8 : {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} mots chacune.
+- `hook` doit correspondre exactement à la légende de la scène 1.
+- Chaque scène doit avoir un visuel distinct de 5 à 12 mots, sans texte, logo ni interface.
+- Titre : maximum cinq mots, simple, spécifique, sans emoji ni sensationnalisme.
+- `thumbnail_text` : 2 à 4 mots clairs qui complètent le titre sans le répéter.
+- `cta` : une invitation courte et naturelle à s'abonner, uniquement en métadonnée.
+- `description` : une phrase exacte qui résume l'explication.
 
-1. **HOOK** (3 premières secondes - CRITIQUE) :
-   - Doit arrêter le scroll immédiatement
-   - Utilise un ton conversationnel
-   - Pattern interrupt ou déclaration choquante
-
-2. **SCÈNES** ({MIN_SCENES}-{MAX_SCENES} scènes) :
-   - Chaque scène : caption de 15-20 mots
-   - Chaque scène : doit se terminer par un cliffhanger
-   - Chaque scène : description visuelle cinématographique
-
-3. **NOMBRE DE MOTS** (EXIGENCE STRICTE) :
-   - Total : {MIN_WORDS}-{MAX_WORDS} mots
-   - Compte tes mots AVANT de finaliser
-
-4. **STRUCTURE (ARC OBLIGATOIRE EN 4 PARTIES) :**
-   - Scène 1 : HOOK - ouverture choquante/contre-intuitive qui arrête le scroll
-   - Scènes 2-4 : PROBLÈME - explique clairement ce qui ne va pas, ce que le spectateur ignore, monte la tension
-   - Scènes 5-8 : SOLUTION - révèle la réponse/vérité/solution, résous la tension
-   - Scène finale : BOUCLE - CTA qui fait écho à un mot, une phrase ou une image du hook
-     de la Scène 1, pour que la fin ramène directement au début (replay fluide)
-
-5. **TON** :
-   - Sombre, mystérieux, factuel
-   - Engageant, pas ennuyeux
-   - NATUREL, CONVERSATIONNEL
-
-**FORMAT DE SCÈNE :**
-{{
-  "visual": "Description cinématographique (macro, contraste élevé, éclairage dramatique)",
-  "caption": "Texte percutant et engageant EN FRANÇAIS (se termine par un cliffhanger)"
-}}
-
-**Retourne UNIQUEMENT du JSON valide avec title, hook, scenes, cta, et description - tout en FRANÇAIS.**
-
-**RAPPEL :** La rétention est TOUT. Écris comme un HUMAIN. Chaque seconde compte. TOUT DOIT ÊTRE EN FRANÇAIS.
+JSON UNIQUEMENT :
+{{"title":"...","thumbnail_text":"...","hook":"...","scenes":[{{"visual":"...","caption":"..."}}],"cta":"...","description":"..."}}
 """
-
 
 # ============================================
 # 3. JSON CLEANING FUNCTION
@@ -267,6 +221,26 @@ def _clean_json_response(raw_reply: str) -> Dict:
 # 4. SCRIPT VALIDATION & NORMALIZATION
 # ============================================
 
+def _trim_to_word_limit(caption: str, max_words: int) -> str:
+    """Trim a caption down to at most max_words, preferring to stop at the
+    last complete sentence within the limit; falls back to a hard cut with
+    a trailing period. Used to auto-fix scenes the LLM wrote too long,
+    instead of burning a full retry (and more Groq tokens) over something
+    a simple trim already fixes."""
+    words = caption.split()
+    if len(words) <= max_words:
+        return caption
+    truncated = " ".join(words[:max_words])
+    # Prefer cutting at the last sentence-ending punctuation within range.
+    last_stop = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+    if last_stop >= len(truncated) * 0.5:  # only use it if it's not too early
+        return truncated[:last_stop + 1]
+    truncated = truncated.rstrip(",;:")
+    if not truncated.endswith((".", "!", "?")):
+        truncated += "."
+    return truncated
+
+
 def _normalize_scenes(script_data: Dict) -> Dict:
     """
     Normalizes scene data from various formats.
@@ -294,10 +268,25 @@ def _normalize_scenes(script_data: Dict) -> Dict:
                 "visual": f"Dark cinematic shot of {caption[:30]}...",
                 "caption": caption
             })
-    
+
+    # Auto-fix: trim any scene that's over its word limit instead of
+    # spending a full LLM retry on something a simple trim already solves.
+    # Scene 1 (the hook) has a tighter cap - see _validate_script for why.
+    for i, scene in enumerate(normalized):
+        limit = HOOK_MAX_WORDS if i == 0 else MAX_SCENE_WORDS
+        scene['caption'] = _trim_to_word_limit(scene['caption'], limit)
+
     script_data['scenes'] = normalized
     script_data['voiceover'] = ' '.join(s['caption'] for s in normalized)
-    
+
+    # Auto-fix: the scored hook must be the exact line viewers hear first.
+    # Rather than relying on the LLM to retype the hook identically to
+    # scene 1's caption (a common, easy mistake for smaller models), just
+    # force them to match - scene 1's caption is the source of truth since
+    # that's what's actually spoken.
+    if normalized:
+        script_data['hook'] = normalized[0]['caption']
+
     return script_data
 
 
@@ -315,7 +304,10 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
     for field in required_fields:
         if not script_data.get(field):
             issues.append(f"Missing required field: {field}")
-    
+
+    # main.py replaces temporary LLM titles with the deterministic Body
+    # Glitch episode title before SEO/upload. Do not burn API retries over
+    # title word counts here; the published title is validated by the series.
     # Check scenes
     scenes = script_data.get('scenes', [])
     if len(scenes) < MIN_SCENES:
@@ -326,19 +318,66 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
     # Check word count
     voiceover = script_data.get('voiceover', '')
     word_count = len(voiceover.split())
-    if word_count < MIN_WORDS - 10:
+    if word_count < MIN_WORDS:
         issues.append(f"Too few words: {word_count} (minimum {MIN_WORDS})")
-    elif word_count > MAX_WORDS + 10:
+    elif word_count > MAX_WORDS:
         issues.append(f"Too many words: {word_count} (maximum {MAX_WORDS})")
     
     # Check each scene
+    # (HOOK_MIN_WORDS/HOOK_MAX_WORDS/MAX_SCENE_WORDS are the same constants
+    # _normalize_scenes already auto-trims to, so a script that's been
+    # normalized should always pass this - this check is now mostly a
+    # safety net for anything normalization didn't catch.)
     for i, scene in enumerate(scenes):
         if not scene.get('visual'):
             issues.append(f"Scene {i+1} missing visual description")
         if not scene.get('caption'):
             issues.append(f"Scene {i+1} missing caption")
+        else:
+            scene_words = len(scene['caption'].split())
+            if i == 0:
+                if scene_words < HOOK_MIN_WORDS or scene_words > HOOK_MAX_WORDS:
+                    issues.append(
+                        f"Scene {i+1} (hook) has {scene_words} words "
+                        f"(allowed {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} to stay under the 4s hook-duration gate)"
+                    )
+            elif scene_words > MAX_SCENE_WORDS:
+                issues.append(f"Scene {i+1} has {scene_words} words (maximum {MAX_SCENE_WORDS})")
+
+    # The scored hook must be the line viewers actually hear first.
+    if scenes and script_data.get('hook'):
+        def norm(value):
+            return re.sub(r"[^a-z0-9 ]", "", value.lower()).strip()
+        hook = norm(script_data['hook'])
+        first = norm(scenes[0].get('caption', ''))
+        if hook != first:
+            issues.append("Hook must exactly match the first scene caption")
     
     return len(issues) == 0, issues
+
+
+# ---------------------------------------------------------------------------
+# PUBLIC API — stable importable interface.
+# ---------------------------------------------------------------------------
+
+def validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
+    """Validate a generated script for structural completeness.
+
+    Public wrapper around the internal ``_validate_script``.
+    Use this from external code (quality_checker, tests, etc.)
+    instead of importing the underscore-prefixed version.
+
+    Parameters
+    ----------
+    script_data : dict
+        Script dictionary with 'title', 'hook', 'scenes', 'cta', 'voiceover'.
+
+    Returns
+    -------
+    tuple[bool, list[str]]
+        (is_valid, issues_list)
+    """
+    return _validate_script(script_data)
 
 
 # ============================================
@@ -364,54 +403,45 @@ def analyze_retention_potential(script_data: Dict) -> Dict:
     hook = script_data.get('hook', '')
     if hook:
         hook_words = len(hook.split())
-        if 5 <= hook_words <= 15:
+        if HOOK_MIN_WORDS <= hook_words <= HOOK_MAX_WORDS:
             score += 15
         else:
-            suggestions.append("Hook should be 5-15 words for maximum impact")
+            suggestions.append(f"Hook should be {HOOK_MIN_WORDS}-{HOOK_MAX_WORDS} words for a fast, clear opening")
         
-        # Check for pattern interrupt (French + English fallback)
-        if any(word in hook.lower() for word in [
-            'ment', 'secret', 'vérité', 'jamais', 'toujours', 'vraiment',
-            'lying', 'secret', 'truth', 'never', 'always', 'actually'
-        ]):
+        # Check for pattern interrupt
+        if len(hook.split()) <= 9 and any(ch in hook for ch in ['?', '.', '!']):
             score += 10
     
-    # Check "TU/TON/TA" language (French personal address)
+    # Check "YOU" language
     voiceover = script_data.get('voiceover', '')
-    lowered_vo = voiceover.lower()
-    you_count = sum(lowered_vo.count(w) for w in [' tu ', ' ton ', ' ta ', ' tes ', ' toi ', 'you'])
-    if you_count >= len(scenes) * 1.5:
+    you_count = sum(voiceover.lower().count(word) for word in ('vous', 'votre', 'tu', 'ton'))
+    if you_count >= 2:
         score += 15
     else:
-        suggestions.append("Utilise plus de langage 'TU/TON/TA' pour une connexion personnelle")
+        suggestions.append("Use the viewer naturally once or twice where it helps clarity")
     
-    # Check cliffhangers (French + English connectors)
+    # Check cliffhangers
     cliffhanger_count = 0
     for scene in scenes:
         caption = scene.get('caption', '')
-        if any(word in caption.lower() for word in [
-            '...', 'mais', 'pourtant', 'cependant', 'toutefois', 'sauf que',
-            'but', 'however', 'yet', 'still', 'though'
-        ]):
+        if any(word in caption.lower() for word in ['...', 'mais', 'pourtant', 'alors', 'et si']):
             cliffhanger_count += 1
     
-    if cliffhanger_count >= len(scenes) * 0.7:
+    if 1 <= cliffhanger_count <= 3:
         score += 20
     else:
-        suggestions.append(f"Seulement {cliffhanger_count}/{len(scenes)} scènes ont un cliffhanger - vise 70%+")
+        suggestions.append(f"Only {cliffhanger_count}/{len(scenes)} scenes have cliffhangers - use only 1-3 natural open loops")
     
     # Check word count
     word_count = len(voiceover.split())
     if MIN_WORDS <= word_count <= MAX_WORDS:
         score += 20
     else:
-        suggestions.append(f"Nombre de mots : {word_count} (cible : {MIN_WORDS}-{MAX_WORDS})")
+        suggestions.append(f"Word count: {word_count} (target: {MIN_WORDS}-{MAX_WORDS})")
     
-    # Check for loopable outro (French + English CTA words)
+    # Check for loopable outro
     cta = script_data.get('cta', '')
-    if any(word in cta.lower() for word in [
-        'abonne', 'partage', 'suis', 'commente', 'follow', 'share', 'subscribe', 'comment'
-    ]):
+    if any(word in cta.lower() for word in ['abonne', 'partage', 'commente', 'suivez']):
         score += 10
     
     return {
@@ -439,7 +469,7 @@ def generate_script(
     
     Features:
     - JSON cleaning with regex fallback
-    - Native French tone enforcement
+    - Native English tone enforcement
     - Automatic validation and retry
     - Retention analysis
     
@@ -455,12 +485,20 @@ def generate_script(
         RuntimeError: If generation fails after all retries
         ValueError: If GROQ_API_KEY is missing
     """
+    logger.info(
+        "Script policy %s: %s scenes, %s-%s words; temporary title is not a retry gate.",
+        SCRIPT_POLICY_VERSION, MIN_SCENES, MIN_WORDS, MAX_WORDS,
+    )
+
     # Check API key
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY is missing. Please set it in environment variables.")
     
-    # Initialize client
+    # Initialize client only for an actual generation call. Structural checks
+    # and offline tests do not require the optional runtime dependency.
+    if Groq is None:
+        raise RuntimeError("groq package is not installed; run pip install -r requirements.txt")
     client = Groq(api_key=api_key)
     
     # Prepare prompt
@@ -481,7 +519,7 @@ def generate_script(
             # Call Groq API
             completion = client.chat.completions.create(
                 messages=messages,
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 response_format={"type": "json_object"},
                 temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS
@@ -530,6 +568,7 @@ def generate_script(
                         f"Return ONLY valid JSON with the same structure."
                     )})
             else:
+                last_error = "; ".join(issues)
                 logger.warning(f"⚠️ Validation issues: {', '.join(issues[:3])}")
                 messages.append({"role": "assistant", "content": raw_reply})
                 messages.append({"role": "user", "content": (

@@ -23,7 +23,6 @@ What DOES apply and add value on top of the existing pipeline:
 
 import os
 import re
-import unicodedata
 import logging
 from typing import Dict, List
 
@@ -32,89 +31,85 @@ logger = logging.getLogger(__name__)
 
 # Readable range for on-screen word-by-word captions. Below this, text
 # flashes by too fast to read; above this, it drags and viewers swipe away.
+# Captions are shown in short two-word chunks by video_editor, so viewers can
+# comfortably follow a natural cloned voice up to 4.0 words/sec. The previous
+# 3.5 limit rejected otherwise healthy 30-second videos for tiny rounding or
+# one-scene delivery variations (for example 3.52 words/sec).
 MIN_WORDS_PER_SEC = 1.5
-MAX_WORDS_PER_SEC = 3.5
+MAX_WORDS_PER_SEC = 4.0
 
-SHORTS_HASHTAGS = ["#shorts", "#youtubeshorts", "#short"]
+SHORTS_HASHTAGS = ["#shorts", "#science", "#scienceduquotidien"]
 
 
 # ---------------------------------------------------------------------------
 # Hook scoring with actionable feedback
 # ---------------------------------------------------------------------------
 
-_CURIOSITY_TRIGGERS = [
-    "don't know", "doesn't know", "myth", "truth", "shocking",
-    "secret", "discovered", "most people", "never knew",
-    # French-first triggers
-    "tu ne sais pas", "personne", "mythe", "vérité", "choquant",
-    "caché", "découvert", "la plupart", "jamais", "étrange",
-    "ton corps", "ton cerveau", "en silence",
-]
-
-_POWER_WORDS = [
-    "proven", "science", "expert", "revealed", "breakthrough",
-    "hidden", "trick", "hack", "amazing", "incredible",
-    # French-first power words
-    "science", "prouvé", "révélé", "caché", "incroyable",
-    "étrange", "sombre", "secret", "cerveau", "sommeil", "stress",
-]
+_CURIOSITY_TRIGGERS = ["mythe", "vrai", "saviez", "pourquoi", "comment", "étrange"]
+_POWER_WORDS = ["science", "cerveau", "corps", "mémoire", "sommeil", "réflexe"]
 
 
 def score_hook_detailed(hook: str) -> Dict:
-    """Same scoring logic as quality_checker._score_hook, but returns which
-    checks passed/failed and a concrete suggestion for each miss, instead
-    of a single collapsed number. Meant for a human reviewing why a video
-    scored low, not for the automated approve/reject gate (that stays in
-    quality_checker.py so there's one source of truth for the pass/fail
-    threshold)."""
-    checks = []
-    score = 0
+    """Score a hook for clarity and specificity without rewarding clickbait."""
+    hook = (hook or "").strip()
+    words = hook.split()
+    if not hook:
+        return {'score': 0, 'checks': [{'name': 'present', 'passed': False, 'note': 'Hook is missing.'}]}
 
-    if not hook or len(hook) < 10:
-        return {
-            'score': 0,
-            'checks': [{'name': 'length', 'passed': False,
-                        'note': 'Hook missing or too short - needs at least a full sentence.'}],
-        }
+    checks, score = [], 35
+    length_ok = 5 <= len(words) <= 9
+    checks.append({'name': 'spoken_length', 'passed': length_ok,
+                   'note': f'{len(words)} words; target is 5-9.'})
+    if length_ok:
+        score += 25
 
-    score += 50
-    has_question = '?' in hook
-    checks.append({
-        'name': 'question_format', 'passed': has_question,
-        'note': 'Questions pull viewers in during the first 3 seconds.' if has_question
-                else 'Consider rephrasing as a question to raise curiosity.',
-    })
-    if has_question:
+    direct = any(re.search(rf"\b{w}\b", hook.lower()) for w in ('vous', 'votre', 'corps', 'cerveau', 'coeur', 'cœur'))
+    checks.append({'name': 'viewer_or_subject', 'passed': direct,
+                   'note': 'Names the viewer or a clear body subject.'})
+    if direct:
         score += 15
 
-    has_curiosity = any(t in hook.lower() for t in _CURIOSITY_TRIGGERS)
-    checks.append({
-        'name': 'curiosity_gap', 'passed': has_curiosity,
-        'note': 'Good curiosity-gap phrasing.' if has_curiosity
-                else f"Add a curiosity trigger, e.g. one of: {', '.join(_CURIOSITY_TRIGGERS[:4])}.",
-    })
-    if has_curiosity:
+    specific = bool(re.search(r"\b(sommeil|lumière|mémoire|coeur|cœur|cerveau|sang|nerf|hormone|cellule|muscle|peau|ventre|énergie|souffle)\w*\b", hook.lower()))
+    checks.append({'name': 'specificity', 'passed': specific,
+                   'note': 'Uses a concrete topic word instead of generic hype.'})
+    if specific:
         score += 20
 
-    has_power_word = any(w in hook.lower() for w in _POWER_WORDS)
-    checks.append({
-        'name': 'power_word', 'passed': has_power_word,
-        'note': 'Good use of a power word.' if has_power_word
-                else f"Add a power word, e.g. one of: {', '.join(_POWER_WORDS[:4])}.",
-    })
-    if has_power_word:
-        score += 15
-
-    word_count = len(hook.split())
-    length_ok = 8 <= word_count <= 15
-    checks.append({
-        'name': 'length_8_to_15_words', 'passed': length_ok,
-        'note': f"{word_count} words is in the ideal range." if length_ok
-                else f"{word_count} words - {'too short, expand it a bit' if word_count < 8 else 'a bit long, tighten it'}.",
-    })
-    score += 10 if length_ok else (-10 if word_count < 8 else 0)
+    clickbait = any(x in hook.lower() for x in ("les médecins cachent", "secret choquant", "incroyable", "100 % vrai"))
+    checks.append({'name': 'no_fake_hype', 'passed': not clickbait,
+                   'note': 'Avoids manipulative or unsupported hype.'})
+    if not clickbait:
+        score += 10
+    else:
+        score -= 30
 
     return {'score': max(0, min(score, 100)), 'checks': checks}
+
+
+# Backward/alt-compatible alias: some callers import the shorter name
+# `score_hook` instead of `score_hook_detailed`. main.py calls this with
+# the *whole script_data dict* (not just the hook string) and expects a
+# 'suggestions' list in the result (used for hook_result.get('suggestions')),
+# so this wraps score_hook_detailed to accept either input shape and always
+# include 'suggestions' alongside the original 'checks' detail.
+def score_hook(hook_or_script_data) -> Dict:
+    """Score a hook. Accepts either the hook string directly, or a
+    script_data dict (uses its 'hook' field) - main.py passes the dict.
+    Returns {'score', 'checks', 'suggestions'} - 'suggestions' is a plain
+    list of fix-it strings for any check that didn't pass, derived from
+    score_hook_detailed's 'checks'.
+    """
+    if isinstance(hook_or_script_data, dict):
+        hook = hook_or_script_data.get('hook', '')
+    else:
+        hook = hook_or_script_data or ''
+
+    result = score_hook_detailed(hook)
+    result['suggestions'] = [
+        check['note'] for check in result.get('checks', [])
+        if not check.get('passed', True)
+    ]
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -154,15 +149,125 @@ def check_caption_pacing(scenes: List[Dict], audio_segments: List[Dict]) -> Dict
 
 
 # ---------------------------------------------------------------------------
-# Shorts hashtags
+# Autofix: trim captions that read too fast for their scene's spoken duration
 # ---------------------------------------------------------------------------
 
-def _to_hashtag(tag: str) -> str:
-    tag = str(tag or '').strip().lstrip('#')
-    tag = unicodedata.normalize('NFKD', tag).encode('ascii', 'ignore').decode('ascii')
-    tag = re.sub(r'[^A-Za-z0-9]+', '', tag)
-    return f"#{tag}" if tag else ""
+def autofix_too_fast_captions(scenes: List[Dict], audio_segments: List[Dict]) -> List[Dict]:
+    """For any scene whose words-per-second (per check_caption_pacing) is
+    above MAX_WORDS_PER_SEC, trim the on-screen caption down to the number
+    of words that actually fit its spoken duration at a readable pace.
 
+    This only shortens the *on-screen caption text* - it does not touch or
+    re-generate the audio, so spoken narration timing is unaffected; this
+    just keeps burned-in/SRT captions from flashing by unreadably fast.
+    Scenes that are already OK (or "too_slow") are returned unchanged.
+    Returns a new list; the input `scenes` list/dicts are not mutated.
+    """
+    fixed_scenes = []
+    for i, scene in enumerate(scenes):
+        seg = audio_segments[i] if i < len(audio_segments) else {}
+        duration = max(seg.get('duration', 0), 0.01)
+        caption = scene.get('caption', '')
+        words = caption.split()
+        wps = len(words) / duration if words else 0
+
+        new_scene = dict(scene)
+        if wps > MAX_WORDS_PER_SEC and len(words) > 1:
+            # Keep as many words as fit at the max readable pace, but
+            # never trim down to nothing.
+            max_words = max(1, int(duration * MAX_WORDS_PER_SEC))
+            if max_words < len(words):
+                trimmed = " ".join(words[:max_words]).rstrip(",;:")
+                if not trimmed.endswith((".", "!", "?")):
+                    trimmed += "."
+                logger.info(
+                    f"Scene {i+1}: autofixed caption from {len(words)} to "
+                    f"{max_words} words ({wps:.1f} -> "
+                    f"{max_words/duration:.1f} words/sec)"
+                )
+                new_scene['caption'] = trimmed
+        fixed_scenes.append(new_scene)
+    return fixed_scenes
+
+
+# ---------------------------------------------------------------------------
+# Retention prediction (heuristic, not ML - gives directional signal +
+# concrete suggestions, same spirit as quality_checker's scoring)
+# ---------------------------------------------------------------------------
+
+# Shorts retention drops off fastest in the first ~3s (the hook) and again
+# past the ~45-50s mark where swipe-away rates climb sharply.
+_IDEAL_MIN_SECONDS = 40.0
+_IDEAL_MAX_SECONDS = 55.0
+
+
+def predict_retention(script_data: Dict, audio_segments: List[Dict]) -> Dict:
+    """Heuristic (non-ML) retention estimate combining hook strength,
+    caption pacing, and total video length. Returns predicted_avg_retention
+    and predicted_swipe_away as 0-1 fractions, plus actionable suggestions.
+    Intentionally conservative/simple - it's a directional signal for the
+    pipeline logs, not a trained model.
+    """
+    suggestions = []
+
+    hook = script_data.get('hook', '')
+    hook_score = score_hook_detailed(hook).get('score', 0)  # 0-100
+
+    scenes = script_data.get('scenes', [])
+    pacing = check_caption_pacing(scenes, audio_segments)
+    unreadable_ratio = (
+        len(pacing.get('issues', [])) / len(scenes) if scenes else 0
+    )
+
+    total_seconds = sum(float(s.get('duration', 0)) for s in audio_segments)
+
+    # Base retention scales with hook strength - a weak hook loses viewers
+    # before anything else in the video matters.
+    retention = 0.35 + 0.45 * (hook_score / 100.0)
+
+    # Unreadable captions cost retention roughly proportional to how much
+    # of the video is affected.
+    retention -= 0.25 * unreadable_ratio
+    if unreadable_ratio > 0:
+        suggestions.append(
+            "Some captions are hard to read at their spoken pace - "
+            "shortening them (or letting autofix_too_fast_captions run) "
+            "should help viewers stay through those scenes."
+        )
+
+    # Length penalty outside the sweet spot.
+    if total_seconds < _IDEAL_MIN_SECONDS:
+        retention -= 0.05
+        suggestions.append(
+            f"Video is {total_seconds:.0f}s, a bit short for strong Shorts "
+            f"retention curves - {_IDEAL_MIN_SECONDS:.0f}-{_IDEAL_MAX_SECONDS:.0f}s tends to perform better."
+        )
+    elif total_seconds > _IDEAL_MAX_SECONDS:
+        retention -= 0.08
+        suggestions.append(
+            f"Video is {total_seconds:.0f}s, past the "
+            f"{_IDEAL_MAX_SECONDS:.0f}s point where swipe-away rises - consider trimming a scene."
+        )
+
+    if hook_score < 60:
+        suggestions.append(
+            "Hook score is below 60 - a sharper, more specific opening "
+            "line usually recovers the most retention per fix."
+        )
+
+    retention = max(0.05, min(retention, 0.95))
+    swipe_away = max(0.0, min(1.0 - retention, 0.95))
+
+    return {
+        'predicted_avg_retention': round(retention, 3),
+        'predicted_swipe_away': round(swipe_away, 3),
+        'suggestions': suggestions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shorts hashtags
+# ---------------------------------------------------------------------------
 
 def generate_shorts_hashtags(topic_tags: List[str], n: int = 5) -> List[str]:
     """#shorts-family tags first (near-mandatory for Shorts shelf
@@ -170,8 +275,8 @@ def generate_shorts_hashtags(topic_tags: List[str], n: int = 5) -> List[str]:
     seo_generator/niche_strategy - avoids re-deriving tags from scratch."""
     result = list(SHORTS_HASHTAGS)
     for t in topic_tags:
-        tag = _to_hashtag(t)
-        if tag and tag.lower() not in (x.lower() for x in result):
+        tag = f"#{t}" if not t.startswith('#') else t
+        if tag.lower() not in (x.lower() for x in result):
             result.append(tag)
         if len(result) >= n:
             break
@@ -229,25 +334,27 @@ def build_shorts_report(script_data: Dict, audio_segments: List[Dict], topic_tag
     hook_detail = score_hook_detailed(script_data.get('hook', ''))
     pacing = check_caption_pacing(script_data.get('scenes', []), audio_segments)
     hashtags = generate_shorts_hashtags(topic_tags)
+    retention_prediction = predict_retention(script_data, audio_segments)
 
     return {
         'hook_detail': hook_detail,
         'caption_pacing': pacing,
         'shorts_hashtags': hashtags,
+        'retention_prediction': retention_prediction,
     }
 
 
 if __name__ == "__main__":
     import json
     test_scenes = [
-        {"visual": "cerveau en macro sombre", "caption": "Ton cerveau fait quelque chose d'étrange pendant la nuit."},
-        {"visual": "neurones en gros plan", "caption": "Il trie tes souvenirs et prépare ton corps pour le réveil."},
+        {"visual": "human heart beating", "caption": "Your heart has its own brain."},
+        {"visual": "close up neurons", "caption": "It contains over 40000 neurons that operate independently of your actual brain."},
     ]
     test_segments = [{"duration": 2.0}, {"duration": 3.0}]
     report = build_shorts_report(
-        {"hook": "Ton cerveau fait ça en silence pendant la nuit...", "scenes": test_scenes},
+        {"hook": "Doctors don't want you to know this about your heart...", "scenes": test_scenes},
         test_segments,
-        ["cerveau", "sommeil", "science"],
+        ["darkfacts", "heartfacts", "science"],
     )
-    print(json.dumps(report, indent=2, ensure_ascii=False))
+    print(json.dumps(report, indent=2))
     print(generate_srt(test_scenes, test_segments))
