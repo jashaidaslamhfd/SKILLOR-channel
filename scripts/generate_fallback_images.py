@@ -1,113 +1,113 @@
+#!/usr/bin/env python3
 """
-generate_fallback_images.py
+scripts/generate_fallback_images.py
+------------------------------------
+One-time (or periodic) builder for the local pre-generated image pool at
+assets/fallback_images/. This is fallback LAYER 2 in image_generator.py -
+it exists so that when every live AI provider (Pollinations/AI-Horde/
+HuggingFace/Gemini/DeepAI/...) is rate-limited or down for a given run,
+scenes don't have to fall straight through to generic Pexels/Pixabay stock
+photos (which trip the pipeline's fallback-ratio quality gate - this is
+exactly what happened in the 88.9% fallback-ratio failure).
 
-One-time helper to bulk-generate ~500 UNIQUE AI images for the
-assets/fallback_images/ pool (DARK BODY & BRAIN MYSTERY niche).
+Run this SEPARATELY from the per-video pipeline - e.g. overnight, or
+whenever provider quota/traffic is healthy - NOT as part of every run. It
+walks the channel's static DARK_TOPICS pool, builds the same on-brand
+dark/moody prompt used for live scenes, and tries every registered
+provider (in the same fallback order as image_generator.py) until one
+succeeds, saving the result into assets/fallback_images/.
 
-Run from the repo root:
-    python scripts/generate_fallback_images.py
+Usage:
+    python scripts/generate_fallback_images.py --count 100
+    python scripts/generate_fallback_images.py --count 300 --out-dir assets/fallback_images --delay 5
 """
 
 import os
 import sys
 import time
 import random
+import argparse
+import logging
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from image_providers import PROVIDER_REGISTRY, available_providers, RateLimitError
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-OUTPUT_DIR = "assets/fallback_images"
-TARGET_COUNT = 500
+from image_providers import available_providers, RateLimitError  # noqa: E402
+from image_generator import _build_prompt  # noqa: E402
+from niche_strategy import DARK_TOPICS  # noqa: E402
 
-# NEW: DARK BODY & BRAIN SCIENCE BUILDING BLOCKS
-SUBJECTS = [
-    "human veins and circulatory system", "human brain scan", "bone marrow making blood cells",
-    "human heart anatomy", "nervous system neurons", "human DNA strand",
-    "stomach and gut brain connection", "human lungs breathing",
-    "microscopic blood cells", "human skeleton", "brain synapses firing",
-    "human organs dark background", "spinal cord", "eye anatomy closeup",
-    "human muscles", "cell division", "medical 3d render of human body",
-    "brain waves eeg", "human skin layers", "intestines and digestion",
-]
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-SETTINGS = [
-    "on dark background with blue glow", "in a medical lab with dramatic lighting",
-    "with cinematic lighting and fog", "on black background, scientific",
-    "in a hospital with neon lights", "3d render, dark sci-fi style",
-    "microscopic view with dramatic shadows", "anatomical illustration dark theme",
-    "floating in dark space with particles", "x-ray style dark background",
-]
 
-STYLES = [
-    "photorealistic, 3d anatomy, dark lighting, high detail",
-    "medical illustration, dark blue and red tones, cinematic",
-    "scientific render, dramatic lighting, ultra detailed",
-    "dark moody, neon accents, photorealistic anatomy",
-    "cinematic, black background, glowing veins",
-    "realistic human anatomy, dark hospital lighting",
-]
-
-def build_prompt():
-    subject = random.choice(SUBJECTS)
-    setting = random.choice(SETTINGS)
-    style = random.choice(STYLES)
-    scene_text = f"{subject} {setting}, {style}"
-    return scene_text.replace(" ", "_"), scene_text
-
-def already_have():
-    if not os.path.isdir(OUTPUT_DIR):
+def _existing_count(out_dir: str) -> int:
+    if not os.path.isdir(out_dir):
         return 0
-    return len([f for f in os.listdir(OUTPUT_DIR) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
+    return len([f for f in os.listdir(out_dir) if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))])
 
-def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    count = already_have()
-    print(f"Starting with {count} images already in {OUTPUT_DIR}")
 
+def build_pool(count: int, out_dir: str, delay: float = 3.0) -> None:
+    os.makedirs(out_dir, exist_ok=True)
     providers = available_providers()
     if not providers:
-        print("❌ No providers available")
+        logger.error("No AI providers available (check API keys / network) - nothing to generate.")
         return
 
-    print(f"Using {len(providers)} available provider(s): " + ", ".join(p["name"] for p in providers))
+    start_index = _existing_count(out_dir)
+    logger.info(
+        f"Building fallback pool: {count} new image(s) -> {out_dir} "
+        f"(pool currently has {start_index}, {len(providers)} provider(s) available)"
+    )
 
-    provider_idx = 0
-    consecutive_failures = 0
-    MAX_CONSECUTIVE_FAILURES = 40
+    made = 0
+    attempt = 0
+    max_attempts = count * 6  # generous ceiling so a bad streak of failures doesn't loop forever
 
-    while count < TARGET_COUNT:
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-            print(f"\nStopping: {MAX_CONSECUTIVE_FAILURES} failures in a row. Re-run to resume from {count}/{TARGET_COUNT}")
-            break
+    while made < count and attempt < max_attempts:
+        topic = DARK_TOPICS[attempt % len(DARK_TOPICS)]
+        attempt += 1
+        prompt_text = _build_prompt(topic)
+        prompt = prompt_text.replace(" ", "_").replace(",", "")
+        seed = random.randint(1, 999999)
 
-        provider = providers[provider_idx % len(providers)]
-        provider_idx += 1
+        saved = False
+        for provider in providers:
+            try:
+                image_bytes, ext = provider["generate"](prompt, seed, prompt_text)
+                if not image_bytes or len(image_bytes) < 2000:
+                    raise RuntimeError(f"{provider['name']}: empty/too-small response")
+                path = os.path.join(out_dir, f"pool_{start_index + made:04d}.{ext}")
+                with open(path, "wb") as f:
+                    f.write(image_bytes)
+                logger.info(f"[{made + 1}/{count}] '{topic}' via {provider['name']} -> {path}")
+                made += 1
+                saved = True
+                break
+            except RateLimitError as e:
+                logger.warning(f"'{topic}' - {provider['name']} rate-limited: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"'{topic}' - {provider['name']} failed: {e}")
+                continue
 
-        prompt, scene_text = build_prompt()
-        seed = random.randint(1, 999)
+        if not saved:
+            logger.error(f"'{topic}' - all providers failed for this topic, skipping.")
 
-        try:
-            image_bytes, ext = provider["generate"](prompt, seed, scene_text)
-        except RateLimitError as e:
-            print(f"  ⚠️ {provider['name']} rate-limited: {e}")
-            consecutive_failures += 1
-            continue
-        except Exception as e:
-            print(f"  ❌ {provider['name']} failed: {e}")
-            consecutive_failures += 1
-            continue
+        time.sleep(delay)  # be polite to free/shared APIs
 
-        fname = f"darkbody_{count:04d}_{seed}.{ext}" # NAME BHI CHANGE
-        dest = os.path.join(OUTPUT_DIR, fname)
-        with open(dest, "wb") as f:
-            f.write(image_bytes)
-        count += 1
-        consecutive_failures = 0
-        print(f"  [{count}/{TARGET_COUNT}] saved {fname} via {provider['name']}")
+    if attempt >= max_attempts and made < count:
+        logger.error(
+            f"Stopped after {attempt} attempts with only {made}/{count} generated - "
+            f"providers may be out of quota right now. Re-run later to top up the pool."
+        )
 
-        time.sleep(1)
+    logger.info(f"Done. Pool now has {_existing_count(out_dir)} image(s) in {out_dir}.")
 
-    print(f"\nDone. Total unique DARK BODY images: {count}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Build/top-up the local fallback image pool.")
+    parser.add_argument("--count", type=int, default=100, help="How many NEW images to generate this run.")
+    parser.add_argument("--out-dir", type=str, default="assets/fallback_images", help="Output directory.")
+    parser.add_argument("--delay", type=float, default=3.0, help="Seconds to wait between requests (politeness).")
+    args = parser.parse_args()
+
+    build_pool(args.count, args.out_dir, args.delay)
