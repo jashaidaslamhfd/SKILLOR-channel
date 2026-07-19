@@ -65,58 +65,60 @@ def validate_scene_image(path: str, min_side: int = 512) -> Dict:
 
 
 def pad_video_to_minimum(path: str, min_seconds: float) -> str:
-    """If video is slightly too short, pad it with a freeze frame at the end.
-    
-    Returns the path to the padded video (or original if no padding needed).
+    """Pad a slightly short render with its final frame and matching silence.
+
+    ``tpad=stop`` takes a *frame count*, not milliseconds. The earlier
+    implementation supplied milliseconds and used an invalid ``apad`` sample
+    expression, so ffmpeg could fail silently and leave the short original in
+    place. This version uses duration-based filters and maps both filtered
+    streams explicitly.
     """
-    # First probe the current video
-    command = [
-        _ffprobe_exe(), "-v", "error", "-show_streams", "-show_format",
-        "-of", "json", path,
-    ]
+    if min_seconds <= 0:
+        return path
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=True)
-        data = json.loads(result.stdout)
+        probe = subprocess.run(
+            [_ffprobe_exe(), "-v", "error", "-show_entries", "format=duration",
+             "-of", "json", path],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        duration = float(json.loads(probe.stdout).get("format", {}).get("duration") or 0)
     except Exception as exc:
         raise MediaValidationError(f"ffprobe failed during padding check: {exc}") from exc
 
-    duration = float(data.get("format", {}).get("duration") or 0)
-    
-    # If video is already long enough, return original
     if duration >= min_seconds:
         return path
-    
-    # Calculate how much padding we need
-    padding_needed = min_seconds - duration + 0.5  # Add 0.5s buffer
-    
-    # Create padded video using ffmpeg - freeze last frame
+
+    # A small safety buffer avoids AAC/frame rounding placing the output just
+    # below the validator threshold again (e.g. 34.98 for a 35.00s minimum).
+    target_seconds = min_seconds + 0.75
+    padding_seconds = target_seconds - duration
     output_path = path.replace(".mp4", "_padded.mp4")
-    
-    # Use ffmpeg to pad with freeze frame
-    # tpad filter: duplicate last frame to extend video
-    filter_complex = f"tpad=stop={int(padding_needed * 1000)}:stop_mode=clone"
-    
+    filter_graph = (
+        f"[0:v]tpad=stop_duration={padding_seconds:.3f}:stop_mode=clone[v];"
+        f"[0:a]apad=pad_dur={padding_seconds:.3f}[a]"
+    )
     command = [
         "ffmpeg", "-y", "-i", path,
-        "-vf", filter_complex,
-        "-af", "apad=whole_len=int({}*44100)".format(int(min_seconds * 44100)),
-        "-c:v", "libx264", "-c:a", "aac",
-        "-shortest",
-        output_path
+        "-filter_complex", filter_graph,
+        "-map", "[v]", "-map", "[a]",
+        "-t", f"{target_seconds:.3f}",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "-movflags", "+faststart", output_path,
     ]
-    
     try:
-        subprocess.run(command, capture_output=True, text=True, timeout=60, check=True)
-        if os.path.isfile(output_path) and os.path.getsize(output_path) > 100000:
-            # Replace original with padded version
-            os.replace(output_path, path)
-            return path
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        if completed.returncode != 0:
+            raise MediaValidationError(
+                "ffmpeg padding failed: " + (completed.stderr[-800:] or "unknown error")
+            )
+        if not os.path.isfile(output_path) or os.path.getsize(output_path) <= 100_000:
+            raise MediaValidationError("ffmpeg padding produced no usable output file")
+        os.replace(output_path, path)
+        return path
     except Exception:
-        # If padding fails, clean up and return original
         if os.path.isfile(output_path):
             os.remove(output_path)
-    
-    return path
+        raise
 
 
 def probe_video(path: str) -> Dict:
