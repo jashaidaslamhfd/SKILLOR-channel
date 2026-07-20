@@ -41,6 +41,7 @@ try:
     from quality_checker import QualityChecker
     from scheduler import FrancePeakTimeScheduler
     from anti_spam import AntiSpamSystem
+    from french_quality_gate import validate_publication_quality
     from seo_generator import generate_seo_package
     from shorts_enhancer import build_shorts_report, generate_srt, score_hook
     from seo_analytics import predict_ctr, score_thumbnail, rank_hashtags, generate_ab_variants, get_historical_insights
@@ -195,12 +196,23 @@ class SKILLORPipeline:
             if not script_data.get('scenes') or len(script_data['scenes']) < 3:
                 raise ValueError("Script has insufficient scenes")
 
+            # French quality gate at SCRIPT stage: broken French (cut sentences,
+            # English slips, risky medical terms) must trigger a script retry,
+            # not reach voice generation. This gate was previously never called.
+            gate_ok, gate_report = validate_publication_quality(script_data)
+            if not gate_ok:
+                logger.warning(f"French quality gate rejected script draft: {gate_report.get('issues')}")
+            if gate_report.get('warnings'):
+                logger.info(f"French quality gate warnings: {gate_report.get('warnings')}")
+
             return {
                 "script_data": script_data,
                 "quality_approved": quality_result.get('approved', False),
                 "quality_score": quality_result.get('scores', {}).get('overall_quality', 0),
                 "spam_ok": spam_result.get('spam_risk_level', 'UNKNOWN') not in ['CRITICAL', 'HIGH'],
                 "spam_level": spam_result.get('spam_risk_level', 'UNKNOWN'),
+                "gate_ok": gate_ok,
+                "gate_issues": gate_report.get('issues', []),
             }
 
         except Exception as e:
@@ -261,10 +273,13 @@ class SKILLORPipeline:
                     best_attempt = {**result, 'hook_score': hook_score}
                     logger.info(f"New best hook score: {hook_score}")
 
-                # Return if quality is good AND hook is strong
-                if result['quality_approved'] and result['spam_ok'] and hook_score >= MIN_HOOK_SCORE:
+                # Return if quality is good AND hook is strong AND French is clean
+                if result['quality_approved'] and result['spam_ok'] and result.get('gate_ok') and hook_score >= MIN_HOOK_SCORE:
                     logger.info(f"Quality approved! Score: {result['quality_score']}, Hook: {hook_score}")
                     return script_data
+
+                if not result.get('gate_ok'):
+                    logger.warning(f"Retrying: French quality gate issues: {result.get('gate_issues')}")
 
             except Exception as e:
                 last_error = e
@@ -280,6 +295,8 @@ class SKILLORPipeline:
                 failures.append('quality')
             if not best_attempt.get('spam_ok'):
                 failures.append(f"spam={best_attempt.get('spam_level')}")
+            if not best_attempt.get('gate_ok'):
+                failures.append('french-gate')
             if best_attempt.get('hook_score', 0) < MIN_HOOK_SCORE:
                 failures.append(f"hook={best_attempt.get('hook_score', 0)}/{MIN_HOOK_SCORE}")
             if not failures:
@@ -567,7 +584,17 @@ class SKILLORPipeline:
 
             # Phase 5: Upload
             logger.info("\n📤 PHASE 5: UPLOAD")
+            # FINAL hard gate on the exact metadata that will be published.
+            # SEO re-writes title/description AFTER the script-stage gate, so
+            # re-validate here: a truncated or non-French final title must stop
+            # the upload, never reach the channel (the "...battre la" incident).
             try:
+                final_gate_ok, final_gate_report = validate_publication_quality(script_data)
+                if not final_gate_ok:
+                    raise RuntimeError(
+                        "French quality gate blocked upload: "
+                        + "; ".join(final_gate_report.get('issues', []))
+                    )
                 upload_result = upload_all(final_video, thumb_path, script_data)
                 logger.info(f"✅ Upload result: {upload_result}")
             except Exception as e:
