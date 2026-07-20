@@ -45,8 +45,8 @@ CATEGORY_TAGS = {
 # So variety here comes from re-phrasing/reformatting the angle itself, not
 # from stacking a second template on top of it.
 _LEADING_STARTERS = (
-    "pourquoi", "la science", "ce qui", "ce qu'il", "les déclencheurs",
-    "le signal", "voici",
+    "pourquoi", "la science", "ce qui", "ce qu'il", "ce que", "les déclencheurs",
+    "le signal", "comprendre", "voici",
 )
 
 PINNED_QUESTION_TEMPLATES = [
@@ -69,11 +69,12 @@ def _clean_topic(topic: str) -> str:
     return t
 
 
+# Kept in sync with the templates in scripts/generate_body_glitch_topics.py.
 _ANGLE_PREFIXES = (
     "pourquoi ", "la science derrière ", "ce qui se passe quand ",
-    "ce qu'il faut comprendre sur ", "les déclencheurs possibles de ce phénomène : ",
-    "pourquoi le cerveau remarque ", "le signal du corps lié à ",
-    "ce qui change lorsque ", "voici pourquoi ",
+    "ce qu'il faut comprendre sur ", "ce qui change lorsque ",
+    "ce que votre corps vous dit quand ", "ce que la science explique sur ",
+    "comprendre pourquoi ", "voici pourquoi ",
 )
 
 
@@ -94,7 +95,21 @@ def _bare_phenomenon(topic: str) -> str:
     return t.strip() or topic
 
 
+# Words that must never END a title: cutting here produces visibly broken
+# French like "...entendre son cœur battre la" - a real title that shipped.
+_DANGLING_ENDINGS = {
+    "le", "la", "les", "l", "de", "du", "des", "d", "un", "une",
+    "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+    "au", "aux", "à", "en", "dans", "sur", "sous", "chez", "avec", "sans",
+    "pour", "par", "et", "ou", "ni", "mais", "donc", "car", "que", "qui",
+    "quand", "lorsque", "si", "ce", "cette", "ses", "leur", "leurs", "y",
+}
+
+
 def _truncate_title(text: str, fallback="La science du quotidien") -> str:
+    """Shorten a title without ever leaving a visibly broken French fragment.
+    Truncation happens at word boundaries, then strips any trailing connector
+    words ("le", "la", "son", "pour"...) so the result is still grammatical."""
     text = (text or "").strip()
     trailing_q = text.endswith("?")
     words = _words(text)
@@ -102,7 +117,11 @@ def _truncate_title(text: str, fallback="La science du quotidien") -> str:
     max_len = TITLE_MAX_LEN - 2 if trailing_q else TITLE_MAX_LEN
     if len(out) > max_len:
         out = out[:max_len].rsplit(" ", 1)[0]
-    out = out.strip()
+    # Never end on a dangling article/preposition/conjunction.
+    parts = out.split()
+    while len(parts) > 1 and parts[-1].lower().rstrip("?!.") in _DANGLING_ENDINGS:
+        parts.pop()
+    out = " ".join(parts).strip()
     if trailing_q and out:
         out += " ?"
     return out or fallback
@@ -143,7 +162,22 @@ def _build_title_options(topic: str, series_title: str) -> List[str]:
         return [_truncate_title(series_title)] if series_title else []
 
     capitalized = raw[0].upper() + raw[1:] if raw else raw
-    options = [_truncate_title(capitalized)]
+    full_angle_text = " ".join(_words(capitalized))
+    angle_option = _truncate_title(capitalized)
+
+    # If the full angle doesn't fit the Shorts title limits, the truncated
+    # version may look clipped even after dangling-word cleanup. In that case
+    # prefer the short branded series title as the DEFAULT pick (it is always
+    # clean and grammatical), and keep the angle as a secondary candidate.
+    # This is what prevented "...entendre son cœur battre la" from being the
+    # visible title while the catalogue angle was too long.
+    angle_truncated = len(angle_option) != len(full_angle_text)
+    series_option = _truncate_title(series_title) if series_title else ""
+
+    if angle_truncated and series_option:
+        options = [series_option, angle_option]
+    else:
+        options = [angle_option]
 
     starts_with_starter = raw.lower().startswith(_LEADING_STARTERS)
 
@@ -158,10 +192,10 @@ def _build_title_options(topic: str, series_title: str) -> List[str]:
     if not starts_with_starter:
         options.append(_truncate_title(f"Pourquoi {_clean_topic(raw)}"))
 
-    # Short branded series title - useful for playlist/binge recognition, but
-    # it goes last so it is never the default pick over a real SEO title.
-    if series_title:
-        options.append(_truncate_title(series_title))
+    # Short branded series title as a final candidate (dedup keeps the
+    # earlier preferred position if it was already promoted above).
+    if series_option:
+        options.append(series_option)
 
     return list(dict.fromkeys([o for o in options if o]))[:5]
 
@@ -216,3 +250,4 @@ def generate_description(script_data: Dict, tags: List[str] | None = None) -> st
     package = generate_seo_package(script_data.get("topic") or script_data.get("title", "science"), script_data)
     extra = ["#" + re.sub(r"[^\w]", "", str(t)) for t in (tags or [])[:3] if t]
     return (package["description"] + "\n" + " ".join(extra)).strip()[:DESCRIPTION_MAX_LEN]
+    
