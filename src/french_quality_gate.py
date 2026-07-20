@@ -48,6 +48,56 @@ SAFE_DISCLAIMER = (
     "Contenu éducatif, pas un avis médical. Si un symptôme persiste, parle à un professionnel de santé."
 )
 
+# ---------------------------------------------------------------------------
+# Broken-French detectors. Two real artifacts shipped to the public channel:
+#   1. "...mais votre cerveau. Et écoute les sons..." - a sentence cut by a
+#      period and continued with a conjunction (scene captions joined naively).
+#   2. A caption ending on a dangling connector ("...son cœur batte la") -
+#      truncation artifacts in spoken/audio text sound instantly robotic.
+# ---------------------------------------------------------------------------
+# Only "et/ou/ni" are treated as broken continuations: in French, starting a
+# sentence with "Et"/"Ou"/"Ni" after a full stop is incorrect (that is the
+# exact artifact that shipped), whereas scene-openers like "Mais", "Donc" or
+# "Alors" are normal discourse markers and must NOT be flagged.
+BROKEN_CONTINUATION = re.compile(
+    r"[.!?…]\s+(et|ou|ni)\b", re.IGNORECASE
+)
+_CONTINUATION_START = re.compile(r"^(et|ou|ni)\b", re.IGNORECASE)
+_DANGLING_CAPTION_END = {
+    "le", "la", "les", "de", "du", "des", "un", "une", "son", "sa", "ses",
+    "mon", "ma", "mes", "ton", "ta", "tes", "au", "aux", "en", "dans", "sur",
+    "sous", "avec", "sans", "pour", "par", "et", "ou", "ni", "que", "qui",
+    "ce", "cette", "votre", "notre", "leur", "leurs",
+}
+
+
+def _broken_narration_issues(scenes: List) -> List[str]:
+    """Detect sentence fragments produced when scene captions are joined."""
+    captions = [str(s.get("caption", "")).strip() for s in scenes if isinstance(s, dict)]
+    issues: List[str] = []
+    joined = " ".join(captions)
+    match = BROKEN_CONTINUATION.search(joined)
+    if match:
+        issues.append(
+            "Broken French continuation after a full stop: %r" % joined[max(0, match.start() - 25):match.end() + 25]
+        )
+    for index, caption in enumerate(captions, start=1):
+        words = caption.split()
+        if not words:
+            issues.append(f"Scene {index} caption is empty")
+            continue
+        last = re.sub(r"[^a-zà-ÿœ]", "", words[-1].lower())
+        if last in _DANGLING_CAPTION_END:
+            issues.append(f"Scene {index} caption ends on a dangling connector: %r" % caption[-40:])
+        if _CONTINUATION_START.match(caption) and index > 1:
+            prev = captions[index - 2]
+            if prev.rstrip().endswith((".", "!", "?", "…")):
+                issues.append(
+                    f"Scene {index} starts with a conjunction right after a full stop: %r" %
+                    (prev[-25:] + " / " + caption[:25])
+                )
+    return issues
+
 
 def _all_public_text(script_data: Dict) -> str:
     parts: List[str] = []
@@ -113,6 +163,10 @@ def validate_publication_quality(script_data: Dict) -> Tuple[bool, Dict]:
     if not (8 <= len(scenes) <= 12):
         issues.append(f"Scene count should be 8-12 for Shorts; got {len(scenes)}")
 
+    # Spoken French must never contain cut sentences - viewers hear these
+    # instantly (retention and channel-trust killers).
+    issues.extend(_broken_narration_issues(scenes)[:5])
+
     for i, scene in enumerate(scenes, start=1):
         caption = scene.get("caption", "") if isinstance(scene, dict) else ""
         wc = len(caption.split())
@@ -155,3 +209,4 @@ def validate_publication_quality(script_data: Dict) -> Tuple[bool, Dict]:
         logger.error(f"French quality gate blocked publication: {issues}")
 
     return report["approved"], report
+    
