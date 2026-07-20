@@ -19,9 +19,17 @@ class FranceChannelTests(unittest.TestCase):
         package=generate_seo_package('Pourquoi une paupière tressaille',{'title':'Pourquoi la paupière tressaille','thumbnail_text':'ŒIL QUI SAUTE','hook':'Pourquoi votre paupière saute parfois','description':'Un réflexe musculaire courant peut faire tressauter une paupière.','cta':'Abonnez-vous pour plus de science simple.'})
         self.assertIn('#science',package['hashtags'])
         self.assertIn('français',package['tags'])
-        self.assertIn('Quel phénomène',package['pinned_comment'])
+        # Pinned comment is now topic-specific (varied per video) instead of
+        # one hardcoded string reused on every single upload - identical
+        # pinned comments across a channel's uploads can look templated/spam
+        # to both viewers and YouTube's systems.
+        self.assertTrue(package['pinned_comment'])
+        self.assertLessEqual(len(package['pinned_comment']), 200)
         self.assertEqual(package['chosen_title'], package['title'])
         self.assertEqual(package['seo_score']['scores']['overall_seo_score'],85)
+        # The chosen title should be the real SEO-rich angle, not just a
+        # 2-3 word branded label - this was the main bug being fixed.
+        self.assertGreater(len(package['chosen_title'].split()), 3)
     def test_french_hook_receives_a_score(self):
         self.assertGreaterEqual(score_hook('Pourquoi votre cerveau remarque votre prénom')['score'],50)
 if __name__=='__main__': unittest.main()
