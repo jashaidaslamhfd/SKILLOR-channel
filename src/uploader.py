@@ -445,4 +445,132 @@ def _upload_facebook_reels(video_path, script_data, tags):
     """
     FIX: previously this posted to /{page-id}/videos as a plain video post.
     Facebook's 2026 recommendation algorithm gives materially better organic
-    reach to
+    reach to content published through the actual Reels pipeline. This now
+    uses the correct 3-phase Reels publishing flow:
+      1. upload_phase=start   -> get video_id + upload_url
+      2. POST binary to upload_url (rupload host)
+      3. upload_phase=finish  -> attach description/hashtags and publish
+    Returns success: bool.
+    """
+    # Facebook Reels has no equivalent private-review workflow in this code.
+    # Keep it opt-in so a private YouTube review run never publishes a public
+    # Reel by surprise.
+    if os.environ.get("FB_UPLOAD_ENABLED", "false").lower() != "true":
+        logger.info("Facebook upload disabled (set FB_UPLOAD_ENABLED=true to publish a Reel).")
+        return False
+
+    fb_token = os.environ.get("FB_ACCESS_TOKEN")
+    fb_page = os.environ.get("FB_PAGE_ID")
+
+    if not fb_token or not fb_page:
+        logger.warning("FB_ACCESS_TOKEN or FB_PAGE_ID missing - Facebook upload skipped")
+        return False
+
+    # Duplicate prevention: if this exact video title was already successfully
+    # posted to Facebook in a previous run, skip it rather than uploading again.
+    if _already_uploaded_to_facebook(script_data):
+        logger.info(f"Facebook: '{script_data.get('title')}' already uploaded — skipping duplicate.")
+        return True  # treat as success so pipeline doesn't retry/fail
+
+    # Max 3 hashtags — Facebook's own algorithm penalises Reels with >5 hashtags
+    description = _build_facebook_description(script_data, tags)
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            # ---- Phase 1: start ----
+            start_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={"upload_phase": "start", "access_token": fb_token},
+                timeout=30,
+            )
+            start_data = start_resp.json()
+            if "error" in start_data or "video_id" not in start_data:
+                raise RuntimeError(f"Reels start phase failed: {start_data}")
+
+            video_id = start_data["video_id"]
+            upload_url = start_data["upload_url"]
+
+            # ---- Phase 2: upload binary ----
+            file_size = os.path.getsize(video_path)
+            with open(video_path, "rb") as f:
+                upload_resp = requests.post(
+                    upload_url,
+                    headers={
+                        "Authorization": f"OAuth {fb_token}",
+                        "offset": "0",
+                        "file_size": str(file_size),
+                    },
+                    data=f,
+                    timeout=300,
+                )
+            upload_data = upload_resp.json() if upload_resp.content else {}
+            if upload_resp.status_code != 200 or upload_data.get("success") is False:
+                raise RuntimeError(f"Reels upload phase failed: {upload_resp.status_code} {upload_data}")
+
+            # ---- Phase 3: finish/publish ----
+            finish_resp = requests.post(
+                f"https://graph.facebook.com/v19.0/{fb_page}/video_reels",
+                data={
+                    "upload_phase": "finish",
+                    "video_id": video_id,
+                    "description": description,
+                    "video_state": "PUBLISHED",
+                    "access_token": fb_token,
+                },
+                timeout=60,
+            )
+            finish_data = finish_resp.json()
+            if finish_resp.status_code == 200 and finish_data.get("success", True) and "error" not in finish_data:
+                logger.info(f"Facebook Reels published successfully: video_id={video_id}")
+                return True
+            else:
+                raise RuntimeError(f"Reels finish phase failed: {finish_data}")
+
+        except Exception as e:
+            logger.warning(f"Facebook Reels upload attempt {attempt}/{MAX_RETRIES} failed: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY * (2 ** (attempt - 1)))
+            continue
+
+    logger.error("Facebook Reels upload failed after all retries")
+    return False
+
+
+def upload_all(video_path, thumb_path, script_data):
+    """Upload video to YouTube and Facebook Reels with comprehensive error handling."""
+
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    if not script_data or 'title' not in script_data:
+        raise ValueError("Invalid script data - missing title")
+
+    title = script_data.get('title', 'Untitled')
+    # Tags come from script_data (set by main.py via niche_strategy.generate_seo_tags).
+    # Fallback below only fires if that ever comes back empty - matches the
+    # current dark-facts niche, not the old parenting-channel tags.
+    # French fallback (was leftover English 'darkfacts'/'bodyfacts' tags).
+    tags = script_data.get('tags') or ['science', 'shorts', 'corps humain', 'cerveau']
+
+    logger.info(f"Starting upload process for: {title}")
+    logger.info(f"selfDeclaredMadeForKids = {MADE_FOR_KIDS} (verify this is correct for your content!)")
+    logger.info("YouTube language metadata = fr (defaultLanguage + defaultAudioLanguage)")
+    logger.info(f"Privacy status = {YT_PRIVACY_STATUS} | scheduled publish = {SCHEDULE_PUBLISH} | synthetic disclosure = {DECLARE_SYNTHETIC_MEDIA}")
+    logger.info(f"SEO tags for this video: {tags}")
+
+    youtube_success, yt_video_id = _upload_youtube(video_path, thumb_path, script_data, tags)
+    facebook_success = _upload_facebook_reels(video_path, script_data, tags)
+
+    logger.info(f"YouTube Upload: {'SUCCESS' if youtube_success else 'FAILED/SKIPPED'}")
+    if yt_video_id:
+        logger.info(f"  URL: https://youtu.be/{yt_video_id}")
+    logger.info(f"Facebook Upload: {'SUCCESS' if facebook_success else 'FAILED/SKIPPED'}")
+
+    if not (youtube_success or facebook_success):
+        raise RuntimeError("Both YouTube and Facebook uploads failed")
+
+    return {
+        "youtube_success": youtube_success,
+        "youtube_video_id": yt_video_id,
+        "facebook_success": facebook_success,
+    }
