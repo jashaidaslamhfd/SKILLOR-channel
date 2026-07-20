@@ -201,8 +201,8 @@ def _upload_youtube(video_path, thumb_path, script_data, tags):
             # topic/category-aware tags from niche_strategy.generate_seo_tags,
             # which also helps SEO reach and avoids duplicate-metadata spam risk.
             'tags': tags,
-            'defaultLanguage': 'en',
-            'defaultAudioLanguage': 'en',
+            'defaultLanguage': 'fr',
+            'defaultAudioLanguage': 'fr',
         },
         'status': {
             'privacyStatus': YT_PRIVACY_STATUS,
