@@ -43,5 +43,20 @@
     "predicted_ctr": 9.0,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "8727005c0dac29e6d88d306953770646ed956bb4b50c6b82acc4ab3093d9e195",
+    "title": "Pourquoi le cerveau remarque entendre son c\u0153ur battre la",
+    "topic": "Pourquoi le cerveau remarque entendre son c\u0153ur battre la nuit",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "La nuit, vous vous endormez tranquillement, mais votre cerveau. Et \u00e9coute les sons de votre corps, comme votre respiration et votre c\u0153ur Le c\u0153ur bat r\u00e9guli\u00e8rement, m\u00eame quand vous dormez, car il doit toujours fonctionner Le cerveau utilise les nerfs pour \u00e9couter les battements du c\u0153ur et les informations sur votre corps Et transmet ces informations au cerveau via les signaux nerveux qui se d\u00e9placent \u00e0 grande vitesse La nuit, votre c\u0153ur bat toujours, mais il est habituel pour votre cerveau et ne ",
+    "posted_at": "2026-07-20T16:29:59.480445+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "FteL-0nbHWk",
+    "seo_score": 85,
+    "predicted_ctr": 9.0,
+    "hook_score": 100,
+    "predicted_retention": 0.8
   }
 ]
