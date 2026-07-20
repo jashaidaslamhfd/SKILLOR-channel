@@ -395,6 +395,18 @@ class SKILLORPipeline:
                 if title_options:
                     ab_variants = generate_ab_variants(script_data, title_options)
                     script_data['ab_variants'] = ab_variants
+                    # Actually apply the winning title instead of only logging
+                    # the recommendation. Previously the pipeline computed the
+                    # best-predicted-CTR title and then uploaded the original
+                    # short title anyway - silently discarding the ranking.
+                    recommended = ab_variants.get('recommended')
+                    if recommended and recommended.get('title'):
+                        logger.info(
+                            f"🏆 Applying winning title: '{recommended['title']}' "
+                            f"(predicted CTR {recommended.get('predicted_ctr')}) "
+                            f"over default '{script_data.get('title')}'"
+                        )
+                        script_data['title'] = recommended['title']
                 insights = get_historical_insights()
                 if insights.get('insights'):
                     script_data['historical_insights'] = insights
