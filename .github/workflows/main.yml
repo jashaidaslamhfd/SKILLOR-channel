@@ -11,8 +11,12 @@ on:
     # Two UTC triggers cover daylight-saving changes. The gate runs exactly
     # once at 19:00 Europe/Paris: one high-quality test video/day while
     # the channel rebuilds its audience signal.
-    - cron: "0 21,22 * * *"
-
+  # 13:00 Paris = 11:00 UTC
+    - cron: "0 11 * * *"
+  # 19:00 Paris = 17:00 UTC  
+    - cron: "0 17 * * *"
+  # 21:00 Paris = 19:00 UTC
+    - cron: "0 19 * * *"
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
   contents: write
