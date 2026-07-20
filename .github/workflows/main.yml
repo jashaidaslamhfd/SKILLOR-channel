@@ -156,15 +156,29 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          # User-selected safety mode: videos upload privately for review.
+          # With YT_SCHEDULE_PUBLISH=true, "public" uploads go up as PRIVATE
+          # with status.publishAt = the next Paris peak (08/13/19), and
+          # YouTube publishes them automatically at that exact time - no more
+          # videos going live at 02:32 Paris time after a 2-3h generation run.
           YT_PRIVACY_STATUS: "public"
+          YT_SCHEDULE_PUBLISH: "true"
+          # Honest A/S (altered/synthetic) content disclosure: AI voice + AI
+          # visuals. Sets status.containsSyntheticMedia on every upload.
+          YT_DECLARE_SYNTHETIC_MEDIA: "true"
+          # Auto-add each Short to its SEO-suggested series playlist.
+          YT_PLAYLIST_ENABLED: "true"
           # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
           CONTENT_SERIES: "body_glitches_fr"
           TOPIC_STRATEGY: "body_glitch_series_fr"
           REQUIRE_DAILY_TREND: "false"
+          # DISABLED until FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID secrets are
+          # actually configured: every run was logging a failed Facebook upload
+          # (facebook_success: false on every published video). Note Facebook
+          # Reels has no private-review mode in this pipeline - a Reel goes
+          # public immediately, so only enable once you review that trade-off.
           FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "true"
+          FB_UPLOAD_ENABLED: "false"
           # OPTIMIZED FOR RETENTION & TRENDS
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
