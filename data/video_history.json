@@ -13,5 +13,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "ac782bb3f04eeb2b6c7cc5799ea120f98a253ce02d65f55b76dbac68e8bfa9ee",
+    "title": "R\u00e9veil avant l'alarme",
+    "topic": "Pourquoi se r\u00e9veiller avant son r\u00e9veil peut sembler \u00e9trange",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous vous r\u00e9veillez avant votre horaire de sommeil, ce. et vous vous demandez pourquoi cela compte dans votre quotidien et votre routine Vous avez peut-\u00eatre d\u00e9j\u00e0 exp\u00e9riment\u00e9 cela et vous vous sentez perdu et inquiet Le cycle de sommeil est compos\u00e9 de phases diff\u00e9rentes, dont une de sommeil l\u00e9ger pendant lesquelles vous \u00eates facilement r\u00e9veill\u00e9 et alerte, sans vous sentir fatigu\u00e9 C'est ce qui se passe habituellement sans que vous ne deviez vous inqui\u00e9ter ou vous sentir malade Cela ne signifie pas",
+    "posted_at": "2026-07-20T00:32:30.530915+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "1XVYcxQqDqo",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 100,
+    "predicted_retention": 0.8
   }
 ]
