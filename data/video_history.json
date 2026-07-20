@@ -58,5 +58,20 @@
     "predicted_ctr": 9.0,
     "hook_score": 100,
     "predicted_retention": 0.8
+  },
+  {
+    "content_fingerprint": "4ed746bb4b2a2885530474396659974206f091ceabdfc00c318794bcf0e63f0a",
+    "title": "Pourquoi le temps semble passer plus vite en vieillissant",
+    "topic": "Pourquoi le temps semble passer plus vite en vieillissant",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez l'impression que votre vie passe \u00e0 toute. C'est un ph\u00e9nom\u00e8ne qui frappe de nombreux adultes : le temps passe vite en vieillissant, vraiment vite. Mais pourquoi cela se produit-il exactement ? Le cerveau traite le temps de mani\u00e8re diff\u00e9rente en vieillissant, c'est un changement important. Les enfants comptent les intervalles de temps, les adultes les estiment plus rapidement. En vieillissant, on se sent plus comp\u00e9tent et moins d\u00e9rang\u00e9 par les distractions. Le cerveau passe moins de temp",
+    "posted_at": "2026-07-20T18:58:59.841641+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "x15ltzEHaB8",
+    "seo_score": 85,
+    "predicted_ctr": 9.0,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
