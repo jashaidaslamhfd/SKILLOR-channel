@@ -8,15 +8,24 @@ on:
         required: false
         type: string
   schedule:
-    # Two UTC triggers cover daylight-saving changes. The gate runs exactly
-    # once at 19:00 Europe/Paris: one high-quality test video/day while
-    # the channel rebuilds its audience signal.
-  # 13:00 Paris = 11:00 UTC
+    # 3 peak windows/day for a French audience, each backed by two crons so
+    # the correct one fires regardless of DST (Europe/Paris is UTC+2 in
+    # summer/CEST, UTC+1 in winter/CET). The gate step below only lets the
+    # run through when it's actually one of these Paris hours, so exactly
+    # one of the two crons per window does anything in a given season -
+    # nothing gets silently dropped when the clocks change in Oct/Mar.
+  # 08:00 Paris (morning commute) - summer
+    - cron: "0 6 * * *"
+  # 08:00 Paris (morning commute) - winter
+    - cron: "0 7 * * *"
+  # 13:00 Paris (lunch break) - summer
     - cron: "0 11 * * *"
-  # 19:00 Paris = 17:00 UTC  
+  # 13:00 Paris (lunch break) - winter
+    - cron: "0 12 * * *"
+  # 19:00 Paris (evening peak) - summer
     - cron: "0 17 * * *"
-  # 21:00 Paris = 19:00 UTC
-    - cron: "0 19 * * *"
+  # 19:00 Paris (evening peak) - winter
+    - cron: "0 18 * * *"
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
   contents: write
@@ -36,13 +45,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          paris_hour="$(TZ=Europe/Paris date +%H)"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
+            # Manual runs still bypass the time gate (useful for testing),
+            # but the previous version did this silently. A video generated
+            # now and uploaded ~2-3h later can easily land in the middle of
+            # the night for the French audience - this happened once
+            # already (a video published at 02:47 Europe/Paris got far
+            # fewer views than one published in the evening peak). Warn
+            # loudly so a manual run at a bad hour is a visible choice, not
+            # an accident.
+            case "$paris_hour" in
+              08|13|19) : ;;
+              *) echo "::warning::Manual run started at ${paris_hour}:00 Europe/Paris, outside the 08:00/13:00/19:00 peak windows. Generation takes ~2-3h, so consider waiting or scheduling for later." ;;
+            esac
             exit 0
           fi
-          paris_hour="$(TZ=Europe/Paris date +%H)"
           case "$paris_hour" in
-            19) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
+            08|13|19) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -136,7 +157,7 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
           # User-selected safety mode: videos upload privately for review.
-          YT_PRIVACY_STATUS: "private"
+          YT_PRIVACY_STATUS: "public"
           # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
           CONTENT_SERIES: "body_glitches_fr"
           TOPIC_STRATEGY: "body_glitch_series_fr"
