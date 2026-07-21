@@ -88,5 +88,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "0147e48d3de772c6a47c76ac39a7ccea5531c22ea3b5c455c4ec123adaa5c47a",
+    "title": "Ce qui se passe quand un d\u00e9j\u00e0-vu semble \u00e9trangement familier",
+    "topic": "Ce qui se passe quand un d\u00e9j\u00e0-vu semble \u00e9trangement familier",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez d\u00e9j\u00e0 v\u00e9cu quelque chose que vous \u00eates. Mais pourquoi cela vous semble-t-il si familier ? C'est peut-\u00eatre parce que votre cerveau a d\u00e9j\u00e0 trait\u00e9 une information similaire. Lorsque vous percevez une nouvelle information, votre cerveau la compare \u00e0 des souvenirs similaires. Si vous avez d\u00e9j\u00e0 v\u00e9cu une exp\u00e9rience similaire, votre cerveau \u00e9tablit des connexions. C'est ce processus qui vous fait sentir que vous avez d\u00e9j\u00e0 v\u00e9cu quelque chose. Il s'agit d'un m\u00e9canisme normal de votre cerveau, aid",
+    "posted_at": "2026-07-21T16:20:03.747876+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "Re4VU9lryhQ",
+    "seo_score": 85,
+    "predicted_ctr": 9.0,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
