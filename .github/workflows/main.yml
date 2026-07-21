@@ -156,12 +156,13 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          # With YT_SCHEDULE_PUBLISH=true, "public" uploads go up as PRIVATE
-          # with status.publishAt = the next Paris peak (08/13/19), and
-          # YouTube publishes them automatically at that exact time - no more
-          # videos going live at 02:32 Paris time after a 2-3h generation run.
+          # YT_SCHEDULE_PUBLISH=false => video uploads as PUBLIC immediately
+          # (no private-then-scheduled wait). NOTE: generation takes ~2-3h, so
+          # the video can go live at ANY Paris hour (incl. night), which used to
+          # hurt reach - that's why scheduling existed. Set back to "true" to
+          # auto-publish only at the 08/13/19 Paris peaks.
           YT_PRIVACY_STATUS: "public"
-          YT_SCHEDULE_PUBLISH: "true"
+          YT_SCHEDULE_PUBLISH: "false"
           # Honest A/S (altered/synthetic) content disclosure: AI voice + AI
           # visuals. Sets status.containsSyntheticMedia on every upload.
           YT_DECLARE_SYNTHETIC_MEDIA: "true"
