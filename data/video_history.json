@@ -73,5 +73,20 @@
     "predicted_ctr": 9.0,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "b9980f417d50db90c500a0150b01c322c54bf223ca44270e06b261afe511a250",
+    "title": "Ce que votre corps vous dit quand le corps se fige",
+    "topic": "Ce que votre corps vous dit quand le corps se fige quand on a peur",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez probablement d\u00e9j\u00e0 v\u00e9cu \u00e7a... Mais qu'est-ce qui se passe dans votre corps lorsque vous avez peur ? Lorsque vous avez peur, votre corps entre en mode 'pr\u00eat \u00e0 l'action' C'est le r\u00e9flexe de la peur qui prend le contr\u00f4le, lib\u00e9rant l'adrenaline L'adrenaline fait que vos muscles se contractent, vous vous tenez pr\u00eat \u00e0 l'action Mais lorsque vous n'avez pas \u00e0 agir, votre corps se fige Alors, la prochaine fois que vous avez peur, vous savez pourquoi votre corps se fige Et maintenant que vous sav",
+    "posted_at": "2026-07-21T06:22:21.757408+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "0V5ZhO3qviQ",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
