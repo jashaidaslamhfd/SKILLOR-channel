@@ -103,5 +103,20 @@
     "predicted_ctr": 9.0,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "61c29bb0890c66ad102ae379266b45b67a3292f9493e38cf3b4607639793dd0f",
+    "title": "Ce qu'il faut comprendre sur les genoux qui craquent",
+    "topic": "Ce qu'il faut comprendre sur les genoux qui craquent en bougeant",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez d\u00e9j\u00e0 entendu ce bruit familier ? Les genoux sont un joint complexe qui supporte le poids du corps en permanence Mais qu'est-ce qui se passe lorsque vous vous mettez au sport ou que vous marchez longuement ? Craquer signifie que les liquides synoviaux lib\u00e8rent du gaz, ce qui peut \u00eatre audible Et voil\u00e0 comment la pression exerc\u00e9e sur les genoux peut provoquer ces craquements Mais qu'est-ce qui se passe si vous avez des douleurs persistantes ? Pour \u00e9viter les douleurs, il faut faire du sp",
+    "posted_at": "2026-07-21T18:27:51.400574+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "68B-7lTf8nU",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
