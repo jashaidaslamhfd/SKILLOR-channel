@@ -8,24 +8,23 @@ on:
         required: false
         type: string
   schedule:
-    # 3 peak windows/day for a French audience, each backed by two crons so
-    # the correct one fires regardless of DST (Europe/Paris is UTC+2 in
-    # summer/CEST, UTC+1 in winter/CET). The gate step below only lets the
-    # run through when it's actually one of these Paris hours, so exactly
-    # one of the two crons per window does anything in a given season -
-    # nothing gets silently dropped when the clocks change in Oct/Mar.
-  # 08:00 Paris (morning commute) - summer
-    - cron: "0 6 * * *"
-  # 08:00 Paris (morning commute) - winter
-    - cron: "0 7 * * *"
-  # 13:00 Paris (lunch break) - summer
-    - cron: "0 11 * * *"
-  # 13:00 Paris (lunch break) - winter
-    - cron: "0 12 * * *"
-  # 19:00 Paris (evening peak) - summer
-    - cron: "0 17 * * *"
-  # 19:00 Paris (evening peak) - winter
-    - cron: "0 18 * * *"
+    # 3 videos/day for a French audience, uploaded PUBLIC immediately and
+    # started right at the Paris peak windows. With YT_SCHEDULE_PUBLISH=false
+    # the run fires at the cron time and the Short goes live as PUBLIC a few
+    # minutes later (generation ~10-15 min) - no private/scheduled wait that
+    # could leave a video stuck unpublished on YouTube's side.
+    #
+    # Crons are in UTC. With Europe/Paris on CEST (UTC+2, summer) these land
+    # on the 08:00 / 13:00 / 19:00 Paris peaks:
+    #   08:00 Paris = 06:00 UTC
+    #   13:00 Paris = 11:00 UTC
+    #   19:00 Paris = 17:00 UTC
+    # NOTE (DST): when Paris switches to CET (UTC+1, ~late Oct to late Mar),
+    # shift these to 07 / 12 / 18 UTC so they stay on the same Paris peaks.
+  - cron: "0 6 * * *"
+  - cron: "0 11 * * *"
+  - cron: "0 17 * * *"
+
 permissions:
   # Required to persist durable topic/upload/analytics state in data/.
   contents: write
@@ -40,39 +39,10 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Gate the run to one Paris quality window
-        id: gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          paris_hour="$(TZ=Europe/Paris date +%H)"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            # Manual runs still bypass the time gate (useful for testing),
-            # but the previous version did this silently. A video generated
-            # now and uploaded ~2-3h later can easily land in the middle of
-            # the night for the French audience - this happened once
-            # already (a video published at 02:47 Europe/Paris got far
-            # fewer views than one published in the evening peak). Warn
-            # loudly so a manual run at a bad hour is a visible choice, not
-            # an accident.
-            case "$paris_hour" in
-              08|13|19) : ;;
-              *) echo "::warning::Manual run started at ${paris_hour}:00 Europe/Paris, outside the 08:00/13:00/19:00 peak windows. Generation takes ~2-3h, so consider waiting or scheduling for later." ;;
-            esac
-            exit 0
-          fi
-          case "$paris_hour" in
-            08|13|19) echo "should_run=true" >> "$GITHUB_OUTPUT" ;;
-            *) echo "should_run=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-
       - name: Checkout repository
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -80,7 +50,6 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache TTS model downloads for CPU reliability
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -89,7 +58,6 @@ jobs:
           key: skillor-tts-models-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install system dependencies
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -107,7 +75,6 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run offline quality regression tests
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           # Keep the 500-topic catalogue synchronized with its generator.
@@ -118,7 +85,6 @@ jobs:
           python -m unittest discover -s tests -v
 
       - name: Validate required secrets
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -131,7 +97,6 @@ jobs:
           echo "YouTube Data API and Reddit OAuth are optional trend-inspiration sources."
 
       - name: Generate and upload Short
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -157,10 +122,9 @@ jobs:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
           # YT_SCHEDULE_PUBLISH=false => video uploads as PUBLIC immediately
-          # (no private-then-scheduled wait). NOTE: generation takes ~2-3h, so
-          # the video can go live at ANY Paris hour (incl. night), which used to
-          # hurt reach - that's why scheduling existed. Set back to "true" to
-          # auto-publish only at the 08/13/19 Paris peaks.
+          # (no private-then-scheduled wait that could leave it stuck). The
+          # cron itself starts the run at the Paris 08/13/19 peaks, so the
+          # Short goes live PUBLIC right around those windows.
           YT_PRIVACY_STATUS: "public"
           YT_SCHEDULE_PUBLISH: "false"
           # Honest A/S (altered/synthetic) content disclosure: AI voice + AI
@@ -209,7 +173,7 @@ jobs:
           python src/main.py
 
       - name: Persist durable channel state
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -225,7 +189,7 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Upload video, thumbnail and logs
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: skillor-run-${{ github.run_id }}
@@ -234,3 +198,4 @@ jobs:
             pipeline.log
           if-no-files-found: ignore
           retention-days: 7
+          
