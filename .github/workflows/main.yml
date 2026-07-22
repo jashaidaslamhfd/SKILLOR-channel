@@ -1,201 +1,254 @@
 name: "SKILLOR - YouTube Shorts Automation"
 
 on:
-  workflow_dispatch:
-    inputs:
-      topic:
-        description: "Optional video topic (empty = trending topic)"
-        required: false
-        type: string
-  schedule:
-    # 3 videos/day for a French audience, uploaded PUBLIC immediately and
-    # started right at the Paris peak windows. With YT_SCHEDULE_PUBLISH=false
-    # the run fires at the cron time and the Short goes live as PUBLIC a few
-    # minutes later (generation ~10-15 min) - no private/scheduled wait that
-    # could leave a video stuck unpublished on YouTube's side.
-    #
-    # Crons are in UTC. With Europe/Paris on CEST (UTC+2, summer) these land
-    # on the 08:00 / 13:00 / 19:00 Paris peaks:
-    #   08:00 Paris = 06:00 UTC
-    #   13:00 Paris = 11:00 UTC
-    #   19:00 Paris = 17:00 UTC
-    # NOTE (DST): when Paris switches to CET (UTC+1, ~late Oct to late Mar),
-    # shift these to 07 / 12 / 18 UTC so they stay on the same Paris peaks.
-  - cron: "0 6 * * *"
-  - cron: "0 11 * * *"
-  - cron: "0 17 * * *"
-
+ workflow_dispatch:
+  inputs:
+   topic:
+    description: "Optional video topic (empty = trending topic)"
+    required: false
+    type: string
+ schedule:
+  # FIX: Use 5-7 minutes past hour to avoid top-of-hour thundering herd (GitHub's busiest minute).
+  # 3 Paris peaks: 08:00, 13:00, 19:00. Each has summer (UTC+2) and winter (UTC+1) cron.
+  # Gate below now allows 60-min window, so delayed runs still pass.
+  - cron: "7 6 * * *"   # 08:07 Paris summer
+  - cron: "7 7 * * *"   # 08:07 Paris winter
+  - cron: "7 11 * * *"  # 13:07 Paris summer
+  - cron: "7 12 * * *"  # 13:07 Paris winter
+  - cron: "7 17 * * *"  # 19:07 Paris summer
+  - cron: "7 18 * * *"  # 19:07 Paris winter
 permissions:
-  # Required to persist durable topic/upload/analytics state in data/.
-  contents: write
+ contents: write
 
 concurrency:
-  group: skillor-video-generation
-  cancel-in-progress: false
+ group: skillor-video-generation
+ cancel-in-progress: false
 
 jobs:
-  generate-and-upload:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+ generate-and-upload:
+  runs-on: ubuntu-latest
+  timeout-minutes: 180
+  steps:
+   - name: Gate the run to Paris quality window (with delay tolerance)
+     id: gate
+     shell: bash
+     run: |
+      set -euo pipefail
+      paris_hour="$(TZ=Europe/Paris date +%H)"
+      paris_min="$(TZ=Europe/Paris date +%M)"
+      paris_full="$(TZ=Europe/Paris date '+%H:%M %Z')"
+      echo "Current Paris time: $paris_full"
+      
+      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        echo "should_run=true" >> "$GITHUB_OUTPUT"
+        case "$paris_hour" in
+          08|13|19) : ;;
+          *) echo "::warning::Manual run at ${paris_hour}:${paris_min} Paris, outside 08/13/19 peaks. Video will still publish at next Paris peak via publishAt." ;;
+        esac
+        exit 0
+      fi
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # SCHEDULED: Allow 90-min window to survive GitHub queue delays.
+      # Old logic: only exact hour 08|13|19 -> if runner starts at 09:05 due to 65-min delay, it skips and looks like "fail".
+      # New logic: allow 08:00-09:29, 13:00-14:29, 19:00-20:29
+      should_run="false"
+      case "$paris_hour" in
+        08|13|19) should_run="true" ;;
+        09) 
+          # if we were scheduled for 08:xx but delayed to 09:xx, still allow (delay tolerance)
+          if [ "$paris_min" -lt 30 ]; then should_run="true"; echo "::warning::Run delayed: scheduled for 08 Paris, running at 09:${paris_min}"; fi
+          ;;
+        14)
+          if [ "$paris_min" -lt 30 ]; then should_run="true"; echo "::warning::Run delayed: scheduled for 13 Paris, running at 14:${paris_min}"; fi
+          ;;
+        20)
+          if [ "$paris_min" -lt 30 ]; then should_run="true"; echo "::warning::Run delayed: scheduled for 19 Paris, running at 20:${paris_min}"; fi
+          ;;
+      esac
+      
+      echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+      if [ "$should_run" = "false" ]; then
+        echo "::notice::Skipping - outside Paris peak window (Paris is $paris_full). This is expected for the duplicate DST cron."
+      fi
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: requirements.txt
+   - name: Checkout repository
+     if: steps.gate.outputs.should_run == 'true'
+     uses: actions/checkout@v4
 
-      - name: Cache TTS model downloads for CPU reliability
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/huggingface
-            ~/.cache/torch
-          key: skillor-tts-models-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+   - name: Set up Python 3.11
+     if: steps.gate.outputs.should_run == 'true'
+     uses: actions/setup-python@v5
+     with:
+      python-version: "3.11"
+      cache: "pip"
+      cache-dependency-path: requirements.txt
 
-      - name: Install system dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg \
-            fonts-dejavu-core \
-            imagemagick \
-            espeak-ng
-          POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
-          if [ -n "$POLICY_FILE" ]; then
-            sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
+   - name: Cache TTS model downloads for CPU reliability
+     if: steps.gate.outputs.should_run == 'true'
+     uses: actions/cache@v4
+     with:
+      path: |
+       ~/.cache/huggingface
+       ~/.cache/torch
+      key: skillor-tts-models-${{ runner.os }}-${{ hashFiles('requirements.txt') }}-v2
+      restore-keys: |
+       skillor-tts-models-${{ runner.os }}-
+
+   - name: Install system dependencies
+     if: steps.gate.outputs.should_run == 'true'
+     shell: bash
+     run: |
+      set -euo pipefail
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends \
+       ffmpeg \
+       fonts-dejavu-core \
+       imagemagick \
+       espeak-ng
+      POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
+      if [ -n "$POLICY_FILE" ]; then
+        sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
+      fi
+      python -m pip install --upgrade pip setuptools wheel
+      # RETRY pip install for scheduled runs (transient network)
+      for i in 1 2 3; do
+        python -m pip install -r requirements.txt && break || { echo "pip install failed, retry $i"; sleep 15; }
+      done
+
+   - name: Run offline quality regression tests
+     if: steps.gate.outputs.should_run == 'true'
+     shell: bash
+     run: |
+      set -euo pipefail
+      python scripts/generate_body_glitch_topics.py
+      python -m compileall -q src scripts tests
+      python -m unittest discover -s tests -v
+
+   - name: Validate required secrets
+     if: steps.gate.outputs.should_run == 'true'
+     shell: bash
+     env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+     run: |
+      set -euo pipefail
+      if [ -z "${GROQ_API_KEY:-}" ]; then
+        echo "::error::GROQ_API_KEY repository secret is missing."
+        exit 1
+      fi
+      echo "Secrets OK. YouTube/Reddit optional."
+
+   - name: Generate and upload Short
+     if: steps.gate.outputs.should_run == 'true'
+     shell: bash
+     env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+      TREND_REGION: "FR"
+      YOUTUBE_REGION_CODE: "FR"
+      AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
+      AI_HORDE_MAX_WAIT: "300"
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      HF_API_KEY: ${{ secrets.HF_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
+      MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
+      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+      YT_MADE_FOR_KIDS: "false"
+      YT_PRIVACY_STATUS: "public"
+      YT_SCHEDULE_PUBLISH: "true"
+      YT_DECLARE_SYNTHETIC_MEDIA: "true"
+      YT_PLAYLIST_ENABLED: "true"
+      CONTENT_SERIES: "body_glitches_fr"
+      TOPIC_STRATEGY: "body_glitch_series_fr"
+      REQUIRE_DAILY_TREND: "false"
+      FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
+      FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+      FB_UPLOAD_ENABLED: "false"
+      TARGET_MIN_SECONDS: "40"
+      TARGET_MAX_SECONDS: "55"
+      CHATTERBOX_TEMPO: "0.96"
+      CHATTERBOX_EXAGGERATION: "0.35"
+      CHATTERBOX_CFG_WEIGHT: "0.70"
+      CHATTERBOX_TEMPERATURE: "0.60"
+      REQUIRE_CLONED_VOICE: "false"
+      CHANNEL_LANGUAGE: "fr-FR"
+      CHANNEL_COUNTRY: "FR"
+      TTS_ENGINE: "kokoro"
+      KOKORO_LANG_CODE: "f"
+      KOKORO_VOICE: "ff_siwis"
+      MUSIC_VOLUME: "0.07"
+      ENABLE_SCREENSHOT_FALLBACK: "false"
+      MIN_HOOK_SCORE: "85"
+      QUALITY_APPROVAL_THRESHOLD: "85"
+      MAX_HOOK_SECONDS: "5.0"
+      FALLBACK_ABORT_RATIO: "0.80"
+      VIDEO_TOPIC: ${{ inputs.topic || '' }}
+      IMAGEMAGICK_BINARY: /usr/bin/convert
+      PYTHONUNBUFFERED: "1"
+     run: |
+      set -euo pipefail
+      # Extra retry for transient Groq / HF rate limits at peak hours
+      for attempt in 1 2 3; do
+        echo "=== Attempt $attempt / 3 ==="
+        if python src/main.py; then
+          echo "Pipeline succeeded on attempt $attempt"
+          break
+        else
+          rc=$?
+          echo "::warning::Pipeline failed on attempt $attempt with code $rc"
+          if [ $attempt -eq 3 ]; then
+            echo "::error::Pipeline failed after 3 attempts"
+            exit $rc
           fi
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements.txt
+          sleep $((attempt * 60))
+        fi
+      done
 
-      - name: Run offline quality regression tests
-        shell: bash
-        run: |
-          # Keep the 500-topic catalogue synchronized with its generator.
-          # This prevents an old committed JSON catalogue from producing old
-          # numbered titles after the title strategy changes.
-          python scripts/generate_body_glitch_topics.py
-          python -m compileall -q src scripts tests
-          python -m unittest discover -s tests -v
+   - name: Persist durable channel state (with rebase retry)
+     if: always() && steps.gate.outputs.should_run == 'true'
+     shell: bash
+     run: |
+      set -euo pipefail
+      if [ -z "$(git status --porcelain -- data/)" ]; then
+        echo "No state changes to persist."
+        exit 0
+      fi
+      git config user.name "skillor-bot"
+      git config user.email "skillor-bot@users.noreply.github.com"
+      git add data/
+      git commit -m "chore: persist SKILLOR channel state [skip ci]"
 
-      - name: Validate required secrets
-        shell: bash
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GROQ_API_KEY:-}" ]; then
-            echo "::error::GROQ_API_KEY repository secret is missing."
-            exit 1
-          fi
-          echo "YouTube Data API and Reddit OAuth are optional trend-inspiration sources."
-
-      - name: Generate and upload Short
-        shell: bash
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          # Optional official trend APIs. Google Trends RSS still works when
-          # these are empty; never fall back to brittle HTML scraping.
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-          TREND_REGION: "FR"
-          YOUTUBE_REGION_CODE: "FR"
-          AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
-          AI_HORDE_MAX_WAIT: "300"
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
-          MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          YT_MADE_FOR_KIDS: "false"
-          # YT_SCHEDULE_PUBLISH=false => video uploads as PUBLIC immediately
-          # (no private-then-scheduled wait that could leave it stuck). The
-          # cron itself starts the run at the Paris 08/13/19 peaks, so the
-          # Short goes live PUBLIC right around those windows.
-          YT_PRIVACY_STATUS: "public"
-          YT_SCHEDULE_PUBLISH: "false"
-          # Honest A/S (altered/synthetic) content disclosure: AI voice + AI
-          # visuals. Sets status.containsSyntheticMedia on every upload.
-          YT_DECLARE_SYNTHETIC_MEDIA: "true"
-          # Auto-add each Short to its SEO-suggested series playlist.
-          YT_PLAYLIST_ENABLED: "true"
-          # MrNextep 500-episode micro-niche launch: topic fit beats general news trends.
-          CONTENT_SERIES: "body_glitches_fr"
-          TOPIC_STRATEGY: "body_glitch_series_fr"
-          REQUIRE_DAILY_TREND: "false"
-          # DISABLED until FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID secrets are
-          # actually configured: every run was logging a failed Facebook upload
-          # (facebook_success: false on every published video). Note Facebook
-          # Reels has no private-review mode in this pipeline - a Reel goes
-          # public immediately, so only enable once you review that trade-off.
-          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "false"
-          # OPTIMIZED FOR RETENTION & TRENDS
-          TARGET_MIN_SECONDS: "40"
-          TARGET_MAX_SECONDS: "55"
-          # Natural, clear creator narration; slightly slower than the raw
-          # model without the artificial dramatic pace.
-          CHATTERBOX_TEMPO: "0.96"
-          CHATTERBOX_EXAGGERATION: "0.35"
-          CHATTERBOX_CFG_WEIGHT: "0.70"
-          CHATTERBOX_TEMPERATURE: "0.60"
-          REQUIRE_CLONED_VOICE: "false"
-          CHANNEL_LANGUAGE: "fr-FR"
-          CHANNEL_COUNTRY: "FR"
-          TTS_ENGINE: "kokoro"
-          KOKORO_LANG_CODE: "f"
-          KOKORO_VOICE: "ff_siwis"
-          MUSIC_VOLUME: "0.07"
-          ENABLE_SCREENSHOT_FALLBACK: "false"
-          MIN_HOOK_SCORE: "85"
-          QUALITY_APPROVAL_THRESHOLD: "85"
-          MAX_HOOK_SECONDS: "5.0"
-          FALLBACK_ABORT_RATIO: "0.80"
-          VIDEO_TOPIC: ${{ inputs.topic || '' }}
-          IMAGEMAGICK_BINARY: /usr/bin/convert
-          PYTHONUNBUFFERED: "1"
-        run: |
-          set -euo pipefail
-          python src/main.py
-
-      - name: Persist durable channel state
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$(git status --porcelain -- data/)" ]; then
-            echo "No state changes to persist."
+      # FIX: Old code did single pull --rebase + push which fails if analytics.yml pushed meanwhile.
+      for i in 1 2 3; do
+        echo "Push attempt $i"
+        if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+          echo "Persist succeeded"
+          break
+        else
+          echo "Push failed, retry $i"
+          sleep $((i*5))
+          if [ $i -eq 3 ]; then
+            echo "::warning::Failed to push state after 3 retries, but video is already uploaded. State will reconcile next run."
+            # Don't fail the whole job if upload succeeded but push failed
             exit 0
           fi
-          git config user.name "skillor-bot"
-          git config user.email "skillor-bot@users.noreply.github.com"
-          git add data/
-          git commit -m "chore: persist SKILLOR channel state [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+        fi
+      done
 
-      - name: Upload video, thumbnail and logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: skillor-run-${{ github.run_id }}
-          path: |
-            output/
-            pipeline.log
-          if-no-files-found: ignore
-          retention-days: 7
-          
+   - name: Upload video, thumbnail and logs
+     if: always() && steps.gate.outputs.should_run == 'true'
+     uses: actions/upload-artifact@v4
+     with:
+      name: skillor-run-${{ github.run_id }}
+      path: |
+       output/
+       pipeline.log
+      if-no-files-found: ignore
+      retention-days: 14
