@@ -26,7 +26,14 @@ class FranceChannelTests(unittest.TestCase):
         self.assertTrue(package['pinned_comment'])
         self.assertLessEqual(len(package['pinned_comment']), 200)
         self.assertEqual(package['chosen_title'], package['title'])
-        self.assertEqual(package['seo_score']['scores']['overall_seo_score'],85)
+        # seo_score is now computed from real signals, not hardcoded to 85.
+        self.assertIn('seo_score', package)
+        self.assertIn('scores', package['seo_score'])
+        self.assertIn('overall_seo_score', package['seo_score']['scores'])
+        self.assertTrue(
+            0 <= package['seo_score']['scores']['overall_seo_score'] <= 100,
+            "overall_seo_score should be a computed 0-100 value",
+        )
         # The chosen title should be the real SEO-rich angle, not just a
         # 2-3 word branded label - this was the main bug being fixed.
         self.assertGreater(len(package['chosen_title'].split()), 3)

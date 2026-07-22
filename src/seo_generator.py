@@ -241,7 +241,21 @@ def generate_seo_package(topic: str, script_data: Dict) -> Dict:
         "thumbnail_text": (script_data.get("thumbnail_text") or series_title or chosen_title).upper()[:35],
         "pinned_comment": pinned_comment,
         "playlist_suggestion": PLAYLISTS_BY_CATEGORY[category],
-        "seo_score": {"scores": {"overall_seo_score": 85}, "category": category},
+        # Previously hardcoded to 85 (misleading in logs). Now derived from
+        # real signals: title length (30-60 chars reads best on mobile) and
+        # tag breadth. Still a heuristic, not a guarantee.
+        "seo_score": {
+            "scores": {
+                "overall_seo_score": min(
+                    100,
+                    round(
+                        0.5 * (100 if 30 <= len(chosen_title) <= 60 else 70)
+                        + 0.5 * min(100, 50 + 5 * len(tags))
+                    )
+                )
+            },
+            "category": category,
+        },
     }
 
 

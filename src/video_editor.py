@@ -58,10 +58,19 @@ CAPTION_MAX_WORDS_PER_LINE = 2
 CAPTION_MIN_FONT_SIZE = 40
 
 # ✅ NEW: Priority improvements (safe additions)
-IMPORTANT_WORDS = ['danger', 'secret', 'jamais', 'incroyable', 'impossible',
-                   'truth', 'hidden', 'actually', 'why', 'what', 'how',
-                   'when', 'always', 'every', 'mind', 'brain', 'heart',
-                   'real', 'finally', 'explained', 'proven']
+# NOTE: captions are FRENCH, so this list must be French words. The previous
+# list was English ("secret", "truth", "why", "brain", "heart"...) which never
+# matched French narration, so the karaoke word-highlight (a key retention
+# hook) was effectively dead on every video. Replaced with French terms that
+# actually appear in the generated captions.
+# (Both sides are stripped of accents via [^a-zA-Z] before comparison, so
+# accented entries like "cœur" -> "cur" still match consistently.)
+IMPORTANT_WORDS = [
+    'pourquoi', 'jamais', 'vrai', 'vraiment', 'secret', 'mystère', 'étrange',
+    'voici', 'attention', 'enfin', 'réel', 'cependant', 'pourtant', 'mais',
+    'aussi', 'toujours', 'en', 'fait', 'cerveau', 'cœur', 'corps', 'sommeil',
+    'mémoire', 'sang', 'nerf', 'hormone', 'cela', 'ainsi', 'soudain',
+]
 
 # Color themes
 COLOR_THEMES = [

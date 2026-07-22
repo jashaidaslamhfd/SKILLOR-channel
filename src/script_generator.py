@@ -519,7 +519,11 @@ def generate_script(
             # Call Groq API
             completion = client.chat.completions.create(
                 messages=messages,
-                model="llama-3.1-8b-instant",
+                # Overridable via GROQ_MODEL. The 8B instant model is fast/cheap
+                # but produces weaker French hooks/titles; a 70B class model
+                # (set in the workflow) materially improves curiosity-driven
+                # openings and clickable titles -> better CTR/retention.
+                model=os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant"),
                 response_format={"type": "json_object"},
                 temperature=TEMPERATURE,
                 max_tokens=MAX_TOKENS
