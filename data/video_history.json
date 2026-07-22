@@ -118,5 +118,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "2cbce7a2ac313a4780b2afb6367fac3df28982edb3579c2065f388095b1ca5d2",
+    "title": "La science derri\u00e8re le temps qui semble acc\u00e9l\u00e9rer",
+    "topic": "La science derri\u00e8re le temps qui semble acc\u00e9l\u00e9rer en vieillissant",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez l'impression que les ann\u00e9es passent de plus. Mais pourquoi cela se produit-il ? Qu'est-ce qui change en nous ? Vous avez peut-\u00eatre remarqu\u00e9 que le temps semble s'acc\u00e9l\u00e9rer \u00e0 mesure que nous vieillissons. C'est en partie d\u00fb \u00e0 la perte de cellules du cerveau appel\u00e9es \u00ab cellules glissantes \u00bb. Ces cellules jouent un r\u00f4le crucial dans la formation de nouveaux souvenirs et la perception du temps. Comme nous vieillissons, le cerveau perd ces cellules, ce qui affecte notre perception du temps.",
+    "posted_at": "2026-07-22T06:15:36.057658+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "diImyvMyKig",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 85,
+    "predicted_retention": 0.682
   }
 ]
