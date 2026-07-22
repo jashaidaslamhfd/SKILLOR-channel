@@ -133,5 +133,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 85,
     "predicted_retention": 0.682
+  },
+  {
+    "content_fingerprint": "9cf8a04f0b4c614d77dd9f6c283fa71d40002888ceb30adb66169c67992b4f02",
+    "title": "Ce que votre corps vous dit quand le silence devient",
+    "topic": "Ce que votre corps vous dit quand le silence devient inconfortable",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez ressenti ce sentiment de malaise ? Le silence peut \u00eatre inconfortable, mais pourquoi cela arrive-t-il ? L'inconfort silencieux est souvent li\u00e9 \u00e0 l'attente ou \u00e0 l'expectative, ce qui peut \u00eatre angoissant Lorsque nous attendons quelque chose, notre cerveau entre en mode d'alerte, ce qui peut g\u00e9n\u00e9rer de l'anxi\u00e9t\u00e9 Cela peut entra\u00eener des signaux de stress dans notre corps, comme une respiration acc\u00e9l\u00e9r\u00e9e, des battements cardiaques. Mais ce n'est pas n\u00e9cessairement une raison pour paniquer,",
+    "posted_at": "2026-07-22T08:18:22.626706+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "TaXxSn0YoMc",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 85,
+    "predicted_retention": 0.732
   }
 ]
