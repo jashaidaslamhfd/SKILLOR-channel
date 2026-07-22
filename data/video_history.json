@@ -148,5 +148,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 85,
     "predicted_retention": 0.732
+  },
+  {
+    "content_fingerprint": "596699060f044de2d1e4ae41b6be5f9d6b7a02a56563bb48934ff4c3126ea4b7",
+    "title": "Ce que votre corps vous dit quand le ventre se serre",
+    "topic": "Ce que votre corps vous dit quand le ventre se serre lors d'une peur",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Vous avez ressenti cela : un ventre serr\u00e9 lors. Mais qu'est-ce qui se passe exactement pour que votre ventre se serre ainsi ? L'id\u00e9e re\u00e7ue est que cela est d\u00fb \u00e0 la peur elle-m\u00eame, mais ce n'est pas tout \u00e0. Lorsque vous \u00eates en situation de peur, votre syst\u00e8me nerveux lib\u00e8re de l'adr\u00e9naline pour vous aider \u00e0. Cela peut provoquer une contraction de l'estomac, ce qui vous fait sentir votre ventre se serrer. C'est une r\u00e9action normale \u00e0 une situation de peur. Si cela se produit souvent ou est accomp",
+    "posted_at": "2026-07-22T15:29:57.707450+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "DocJNQZiwQQ",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 100,
+    "predicted_retention": 0.75
   }
 ]
