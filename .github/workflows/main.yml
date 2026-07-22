@@ -8,9 +8,7 @@ on:
     required: false
     type: string
  schedule:
-  # FIX: Use 5-7 minutes past hour to avoid top-of-hour thundering herd (GitHub's busiest minute).
-  # 3 Paris peaks: 08:00, 13:00, 19:00. Each has summer (UTC+2) and winter (UTC+1) cron.
-  # Gate below now allows 60-min window, so delayed runs still pass.
+  # FIX: 7 min past hour to avoid top-of-hour herd
   - cron: "7 6 * * *"   # 08:07 Paris summer
   - cron: "7 7 * * *"   # 08:07 Paris winter
   - cron: "7 11 * * *"  # 13:07 Paris summer
@@ -48,14 +46,10 @@ jobs:
         exit 0
       fi
 
-      # SCHEDULED: Allow 90-min window to survive GitHub queue delays.
-      # Old logic: only exact hour 08|13|19 -> if runner starts at 09:05 due to 65-min delay, it skips and looks like "fail".
-      # New logic: allow 08:00-09:29, 13:00-14:29, 19:00-20:29
       should_run="false"
       case "$paris_hour" in
         08|13|19) should_run="true" ;;
         09) 
-          # if we were scheduled for 08:xx but delayed to 09:xx, still allow (delay tolerance)
           if [ "$paris_min" -lt 30 ]; then should_run="true"; echo "::warning::Run delayed: scheduled for 08 Paris, running at 09:${paris_min}"; fi
           ;;
         14)
@@ -100,20 +94,13 @@ jobs:
      run: |
       set -euo pipefail
       sudo apt-get update
-      sudo apt-get install -y --no-install-recommends \
-       ffmpeg \
-       fonts-dejavu-core \
-       imagemagick \
-       espeak-ng
+      sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core imagemagick espeak-ng
       POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
       if [ -n "$POLICY_FILE" ]; then
         sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
       fi
       python -m pip install --upgrade pip setuptools wheel
-      # RETRY pip install for scheduled runs (transient network)
-      for i in 1 2 3; do
-        python -m pip install -r requirements.txt && break || { echo "pip install failed, retry $i"; sleep 15; }
-      done
+      for i in 1 2 3; do python -m pip install -r requirements.txt && break || { echo "pip install failed, retry $i"; sleep 15; }; done
 
    - name: Run offline quality regression tests
      if: steps.gate.outputs.should_run == 'true'
@@ -131,11 +118,7 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
      run: |
       set -euo pipefail
-      if [ -z "${GROQ_API_KEY:-}" ]; then
-        echo "::error::GROQ_API_KEY repository secret is missing."
-        exit 1
-      fi
-      echo "Secrets OK. YouTube/Reddit optional."
+      if [ -z "${GROQ_API_KEY:-}" ]; then echo "::error::GROQ_API_KEY missing."; exit 1; fi
 
    - name: Generate and upload Short
      if: steps.gate.outputs.should_run == 'true'
@@ -194,20 +177,12 @@ jobs:
       PYTHONUNBUFFERED: "1"
      run: |
       set -euo pipefail
-      # Extra retry for transient Groq / HF rate limits at peak hours
       for attempt in 1 2 3; do
         echo "=== Attempt $attempt / 3 ==="
-        if python src/main.py; then
-          echo "Pipeline succeeded on attempt $attempt"
-          break
+        if python src/main.py; then break
         else
-          rc=$?
-          echo "::warning::Pipeline failed on attempt $attempt with code $rc"
-          if [ $attempt -eq 3 ]; then
-            echo "::error::Pipeline failed after 3 attempts"
-            exit $rc
-          fi
-          sleep $((attempt * 60))
+          rc=$?; echo "::warning::Failed attempt $attempt code $rc"
+          if [ $attempt -eq 3 ]; then exit $rc; fi; sleep $((attempt * 60))
         fi
       done
 
@@ -216,30 +191,14 @@ jobs:
      shell: bash
      run: |
       set -euo pipefail
-      if [ -z "$(git status --porcelain -- data/)" ]; then
-        echo "No state changes to persist."
-        exit 0
-      fi
+      if [ -z "$(git status --porcelain -- data/)" ]; then echo "No state changes."; exit 0; fi
       git config user.name "skillor-bot"
       git config user.email "skillor-bot@users.noreply.github.com"
       git add data/
       git commit -m "chore: persist SKILLOR channel state [skip ci]"
-
-      # FIX: Old code did single pull --rebase + push which fails if analytics.yml pushed meanwhile.
       for i in 1 2 3; do
-        echo "Push attempt $i"
-        if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
-          echo "Persist succeeded"
-          break
-        else
-          echo "Push failed, retry $i"
-          sleep $((i*5))
-          if [ $i -eq 3 ]; then
-            echo "::warning::Failed to push state after 3 retries, but video is already uploaded. State will reconcile next run."
-            # Don't fail the whole job if upload succeeded but push failed
-            exit 0
-          fi
-        fi
+        if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then break
+        else echo "Push failed retry $i"; sleep $((i*5)); if [ $i -eq 3 ]; then exit 0; fi; fi
       done
 
    - name: Upload video, thumbnail and logs
