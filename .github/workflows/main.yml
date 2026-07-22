@@ -1,28 +1,36 @@
-name: "SKILLOR - YouTube Shorts Automation"
+name: "SKILLOR - YouTube Shorts Automation (FR)"
 
 on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Optional video topic (empty = trending topic)"
+        description: "Optional video topic (empty = next Body Glitch episode)"
         required: false
         type: string
   schedule:
-    # 3 videos/day for a French audience, uploaded PUBLIC immediately.
-    # Gate removed (per owner request) so scheduled runs always execute -
-    # no more 9-11s skips from a time-window gate.
-    # YT_SCHEDULE_PUBLISH=false => uploads go live as PUBLIC right away
-    # (no private/scheduled wait that could leave a video stuck unpublished).
-    # Crons are in UTC. With Europe/Paris on CEST (UTC+2, summer) the
-    # 7-min-past-the-hour times land on the 08:00 / 13:00 / 19:00 Paris peaks:
-    #   08:07 Paris = 06:07 UTC
-    #   13:07 Paris = 11:07 UTC
-    #   19:07 Paris = 17:07 UTC
-    # NOTE (DST): when Paris switches to CET (UTC+1, ~late Oct to late Mar),
-    # shift these to 07 / 12 / 18 UTC so they stay on the same Paris peaks.
-  - cron: "7 6 * * *"
-  - cron: "7 11 * * *"
-  - cron: "7 17 * * *"
+    # ---------------------------------------------------------------------
+    # 3 videos/day for a French audience, auto-published at Paris peaks
+    # (08:00 / 13:00 / 19:00 Europe/Paris) via status.publishAt — an earlier
+    # video that went live at 02:32 Paris flopped, so exact timing matters.
+    #
+    # Each slot has a summer (CEST, UTC+2) and a winter (CET, UTC+1) cron
+    # that fires ~90 min before publish time — NO manual DST cron flipping
+    # anymore (the old comment said "shift these to 07/12/18 in winter";
+    # forgetting it meant a month of off-peak uploads).
+    #
+    # The gate below uses WIDE generation windows (late GitHub crons used to
+    # be silently skipped by a narrow gate — that's why it was removed "per
+    # owner request"; this version brings the gate back in a form that never
+    # skips a real window, only the off-season twin cron). The twin cron is
+    # deduped downstream by ENFORCE_POSTING_GAP (2h minimum between posts),
+    # NOT by this gate, so a delayed in-season cron still produces a video.
+    # ---------------------------------------------------------------------
+    - cron: "30 4 * * *"    # 06:30 Paris summer → publish 08:00
+    - cron: "30 5 * * *"    # 06:30 Paris winter → publish 08:00
+    - cron: "0 10 * * *"    # 12:00 Paris summer → publish 13:00
+    - cron: "0 11 * * *"    # 12:00 Paris winter → publish 13:00
+    - cron: "30 15 * * *"   # 17:30 Paris summer → publish 19:00
+    - cron: "30 16 * * *"   # 17:30 Paris winter → publish 19:00
 
 permissions:
   contents: write
@@ -36,10 +44,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Gate the run to Paris generation windows (delay-tolerant, deduped)
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          paris_hour="$(TZ=Europe/Paris date +%H)"
+          paris_full="$(TZ=Europe/Paris date '+%H:%M %Z')"
+          echo "Current Paris time: $paris_full"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Windows before each Paris slot (publishAt snaps to the exact slot).
+          # Late crons stay inside; twin-cron duplicates are deduped by the
+          # 2-hour posting gap, not here — real runs never get skipped:
+          #   06-07 → 08:00 · 11-12 → 13:00 · 17-18 → 19:00
+          should_run="false"
+          case "$paris_hour" in
+            06|07|11|12|17|18) should_run="true" ;;
+            *) echo "::notice::Skip - Paris $paris_full outside generation windows (off-season DST cron, expected)" ;;
+          esac
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python 3.11
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -47,29 +80,31 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache TTS model downloads for CPU reliability
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/huggingface
             ~/.cache/torch
-          key: skillor-tts-models-${{ runner.os }}-${{ hashFiles('requirements.txt') }}-v2
+          key: skillor-tts-models-${{ runner.os }}-${{ hashFiles('requirements.txt') }}-v3
           restore-keys: |
             skillor-tts-models-${{ runner.os }}-
 
       - name: Install system dependencies
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core imagemagick espeak-ng
-          POLICY_FILE="$(find /etc/ImageMagick-6 -name policy.xml 2>/dev/null | head -n 1 || true)"
-          if [ -n "$POLICY_FILE" ]; then
-            sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/g' "$POLICY_FILE" || true
-          fi
+          # ffmpeg: video assembly · fonts-dejavu-core: PIL captions ·
+          # espeak-ng: Kokoro French phonemizer. (imagemagick removed —
+          # captions are drawn with PIL; nothing reads IMAGEMAGICK_BINARY.)
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core espeak-ng
           python -m pip install --upgrade pip setuptools wheel
           for i in 1 2 3; do python -m pip install -r requirements.txt && break || { echo "pip install failed, retry $i"; sleep 15; }; done
 
       - name: Run offline quality regression tests
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -77,64 +112,90 @@ jobs:
           python -m compileall -q src scripts tests
           python -m unittest discover -s tests -v
 
-      - name: Validate required secrets
+      - name: Validate required secrets (fail fast, before burning compute)
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${GROQ_API_KEY:-}" ]; then echo "::error::GROQ_API_KEY missing."; exit 1; fi
+          echo "Checking required secrets..."
+          missing=0
+          if [ -z "${GROQ_API_KEY:-}" ]; then
+            echo "::error::GROQ_API_KEY missing."
+            missing=1
+          fi
+          # YouTube OAuth trio — without these a run used to fail in phase 5
+          # AFTER up to 3h of generation. Fail in seconds instead.
+          for var in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET REFRESH_TOKEN; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var missing — the video would fail at upload time."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] && echo "✓ All required secrets present"
+          exit "$missing"
 
       - name: Generate and upload Short
+        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           # Stronger model = better French hooks/titles (higher CTR/retention).
-          # 70B class beats the 8B default for creative French writing.
-          # If this model errors (e.g. not on your Groq plan), delete this
-          # line to fall back to llama-3.1-8b-instant.
-          GROQ_MODEL: "llama-3.1-70b-versatile"
+          # NOTE: llama-3.1-70b-versatile was DECOMMISSIONED by Groq — using it
+          # returned a model-not-found error on every script call (the likely
+          # cause of recent generation failures). 3.3 is the drop-in upgrade;
+          # delete this line to fall back to llama-3.1-8b-instant.
+          GROQ_MODEL: "llama-3.3-70b-versatile"
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          # ---- FRENCH AUDIENCE (all genuinely wired into code) ----
           TREND_REGION: "FR"
           YOUTUBE_REGION_CODE: "FR"
+          CONTENT_SERIES: "body_glitches_fr"
+          TOPIC_STRATEGY: "body_glitch_series_fr"
+          REQUIRE_DAILY_TREND: "false"
+          CHANNEL_LANGUAGE: "fr-FR"
+          CHANNEL_COUNTRY: "FR"
+          TTS_ENGINE: "kokoro"
+          KOKORO_LANG_CODE: "f"
+          KOKORO_VOICE: "ff_siwis"
+          REQUIRE_CLONED_VOICE: "false"
+          # ---- Image providers (optional keys auto-skipped if missing) ----
           AI_HORDE_API_KEY: ${{ secrets.AI_HORDE_API_KEY }}
           AI_HORDE_MAX_WAIT: "300"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
           MODELSLAB_API_KEY: ${{ secrets.MODELSLAB_API_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          # ---- YouTube OAuth ----
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           YT_MADE_FOR_KIDS: "false"
-          YT_PRIVACY_STATUS: "public"
-          YT_SCHEDULE_PUBLISH: "false"
           YT_DECLARE_SYNTHETIC_MEDIA: "true"
           YT_PLAYLIST_ENABLED: "true"
-          CONTENT_SERIES: "body_glitches_fr"
-          TOPIC_STRATEGY: "body_glitch_series_fr"
-          REQUIRE_DAILY_TREND: "false"
-          FB_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          FB_UPLOAD_ENABLED: "false"
+          # Upload private + publishAt → YouTube auto-publishes at the exact
+          # Paris peak (08:00 / 13:00 / 19:00). Videos sit privately first,
+          # so a broken video can be deleted before it ever goes live.
+          YT_PRIVACY_STATUS: "public"
+          YT_SCHEDULE_PUBLISH: "true"
+          # ---- Anti-spam (also dedupes the DST twin crons) ----
+          ENFORCE_POSTING_GAP: "true"
+          # ---- Quality gates ----
           TARGET_MIN_SECONDS: "40"
           TARGET_MAX_SECONDS: "55"
           CHATTERBOX_TEMPO: "0.96"
           CHATTERBOX_EXAGGERATION: "0.35"
           CHATTERBOX_CFG_WEIGHT: "0.70"
           CHATTERBOX_TEMPERATURE: "0.60"
-          REQUIRE_CLONED_VOICE: "false"
-          CHANNEL_LANGUAGE: "fr-FR"
-          CHANNEL_COUNTRY: "FR"
-          TTS_ENGINE: "kokoro"
-          KOKORO_LANG_CODE: "f"
-          KOKORO_VOICE: "ff_siwis"
           MUSIC_VOLUME: "0.07"
           ENABLE_SCREENSHOT_FALLBACK: "false"
           MIN_HOOK_SCORE: "85"
@@ -142,7 +203,6 @@ jobs:
           MAX_HOOK_SECONDS: "5.0"
           FALLBACK_ABORT_RATIO: "0.80"
           VIDEO_TOPIC: ${{ inputs.topic || '' }}
-          IMAGEMAGICK_BINARY: /usr/bin/convert
           PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail
@@ -156,7 +216,7 @@ jobs:
           done
 
       - name: Persist durable channel state (with rebase retry)
-        if: always()
+        if: always() && steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -167,16 +227,17 @@ jobs:
           git commit -m "chore: persist SKILLOR channel state [skip ci]"
           for i in 1 2 3; do
             if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then break
-            else echo "Push failed retry $i"; sleep $((i*5)); if [ $i -eq 3 ]; then exit 0; fi; fi
+            else echo "Push failed retry $i"; sleep $((i*5)); if [ $i -eq 3 ]; then echo "::warning::State push failed; recovery copy is in the run artifact."; exit 0; fi; fi
           done
 
-      - name: Upload video, thumbnail and logs
-        if: always()
+      - name: Upload video, thumbnail, state backup and logs
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: skillor-run-${{ github.run_id }}
           path: |
             output/
             pipeline.log
+            data/
           if-no-files-found: ignore
           retention-days: 14

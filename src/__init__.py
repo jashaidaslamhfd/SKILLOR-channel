@@ -76,3 +76,59 @@ __all__ = [
     "probe_video",
 ]
 
+# ---------------------------------------------------------------------------
+# Lazy public API. Previously __all__ was declared with NO imports and NO
+# __getattr__, so every advertised name raised AttributeError on
+# `from src import X`. This mapping keeps imports lazy (no heavy
+# torch/moviepy cost on plain `import src`) while making the documented API
+# actually resolvable.
+# ---------------------------------------------------------------------------
+
+_LAZY_EXPORTS = {
+    "SKILLORPipeline": "src.main",
+    "generate_script": "src.script_generator",
+    "available_providers": "src.image_providers",
+    "RateLimitError": "src.image_providers",
+    "generate_voice_segments": "src.voice_generator",
+    "generate_voice": "src.voice_generator",
+    "build_video": "src.video_editor",
+    "generate_thumbnail": "src.video_editor",
+    "upload_all": "src.uploader",
+    "get_random_topic": "src.niche_strategy",
+    "get_topic_category": "src.niche_strategy",
+    "generate_seo_tags": "src.niche_strategy",
+    "generate_seo_package": "src.seo_generator",
+    "QualityChecker": "src.quality_checker",
+    "FrancePeakTimeScheduler": "src.scheduler",
+    "AntiSpamSystem": "src.anti_spam",
+    "predict_ctr": "src.seo_analytics",
+    "score_thumbnail": "src.seo_analytics",
+    "build_shorts_report": "src.shorts_enhancer",
+    "generate_srt": "src.shorts_enhancer",
+    "validate_scene_image": "src.media_validator",
+    "probe_video": "src.media_validator",
+}
+
+
+def __getattr__(name):
+    """Resolve public API names on first access (PEP 562)."""
+    if name in _LAZY_EXPORTS:
+        import importlib
+        import os
+        import sys
+        # Modules inside src/ use flat sibling imports (`from seo_generator
+        # import ...`), which only resolve with src/ itself on sys.path —
+        # same trick src/main.py has always used.
+        _src_dir = os.path.dirname(os.path.abspath(__file__))
+        if _src_dir not in sys.path:
+            sys.path.insert(0, _src_dir)
+        module = importlib.import_module(_LAZY_EXPORTS[name])
+        attr = getattr(module, name)
+        globals()[name] = attr
+        return attr
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
+

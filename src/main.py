@@ -369,7 +369,16 @@ class SKILLORPipeline:
                     try:
                         last_dt = datetime.fromisoformat(last_posted_at)
                         if not self.scheduler.validate_posting_interval(last_dt):
+                            # Was a toothless warning before. Now skips the run
+                            # instead of hammering the channel (anti-spam), and
+                            # doubles as the dedupe lock for the DST twin crons.
                             logger.warning("⚠️ Posting sooner than recommended 2h gap")
+                            if os.environ.get("ENFORCE_POSTING_GAP", "true").lower() == "true":
+                                logger.warning(
+                                    "ENFORCE_POSTING_GAP=true → skipping this run. "
+                                    "Set ENFORCE_POSTING_GAP=false to override (not recommended)."
+                                )
+                                return {"success": False, "skipped": "posting_interval"}
                     except Exception as e:
                         logger.warning(f"Could not validate posting interval: {e}")
 

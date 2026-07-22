@@ -1,2 +1,14 @@
 __pycache__/
 *.pyc
+
+# ---- Auth / token artifacts (CRITICAL — never commit these) ----
+oauth_backup.json
+client_secrets*.json
+client_secret*.json
+token*.json
+*.token
+secrets*.json
+**/oauth_backup.json
+
+# Private voice-clone reference — keep locally, never on a public repo.
+assets/voice_reference.wav

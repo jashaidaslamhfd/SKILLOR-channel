@@ -1,34 +1,29 @@
-# Core AI/LLM APIs
+# ============================================================
+# SKILLOR (canal français) — dépendances de production (CPU-safe)
+# Install:  pip install -r requirements.txt
+# Extras lourds optionnels (clonage vocal GPU, fallback screenshot):
+#           pip install -r requirements-optional.txt
+# ============================================================
+
+# ---- Core LLM ----
 groq>=0.9.0
-google-genai>=0.5.0
 
-# Text-to-Speech
-# Chatterbox = primary (MIT license, emotion-exaggeration control - matches
-# the dark/mystery tone). Kokoro = automatic fallback if Chatterbox fails
-# to load or generate. See src/voice_generator.py for the fallback logic.
-chatterbox-tts>=0.1.7
-# Chatterbox needs this for its internal audio watermarker
-# (self.watermarker = perth.PerthImplicitWatermarker()). If this package is
-# missing or a name-clashing "perth" package gets installed instead,
-# ChatterboxTTS.from_pretrained() fails with:
-#   TypeError: 'NoneType' object is not callable
-# Pinning it explicitly here guarantees the real package is always present.
-resemble-perth>=1.0.1
+# ---- Text-to-Speech ----
+# Kokoro = moteur de production (rapide sur CPU, voix française ff_siwis).
+# torch est une dépendance obligatoire de Kokoro, donc il reste ici.
 kokoro==0.9.4
-# Silences a FutureWarning from diffusers (used internally by Chatterbox):
-# "LoRACompatibleLinear is deprecated... switch to PEFT backend". Cosmetic
-# only (doesn't affect output), but this is the documented fix.
-peft>=0.10.0
-
-# Audio Processing
-soundfile>=0.12.1
-
-# ML/Deep Learning
 torch>=2.1.2
-torchaudio>=2.1.0
-transformers>=4.40.0
+soundfile>=0.12.1
+# Repli cloud d'urgence utilisé par voice_generator._synthesize_cloud_tts()
+# quand Kokoro échoue. Était importé mais JAMAIS déclaré avant ce fix.
+edge-tts>=6.1.0
 
-# Video Processing
+# ---- Flux RSS de tendances ----
+# scripts/fetch_trending_now.py l'importe au niveau module ; absent avant,
+# ce script plantait sur une installation fraîche.
+feedparser>=6.0.0
+
+# ---- Video Processing ----
 # MoviePy 2.x breaks `from moviepy.editor import ...` (the .editor
 # subpackage was removed) and changes fx import paths. Pinning to 1.x
 # until the codebase migrates to MoviePy 2.x API. See:
@@ -36,26 +31,29 @@ transformers>=4.40.0
 moviepy>=1.0.3,<2.0.0
 imageio-ffmpeg>=0.4.8
 
-# Image Processing
+# ---- Image Processing ----
 # Pillow 10+ removed Image.ANTIALIAS; this codebase already uses
 # Image.LANCZOS everywhere, so 10.x is fully compatible.
 Pillow>=10.0.0
 numpy>=1.24.0
 
-# HTTP/API Requests
+# ---- HTTP/API Requests ----
 requests>=2.31.0
 
-# Browser automation (screenshot fallback layer for scene visuals)
-playwright>=1.44.0
-
-# Google APIs
+# ---- Google APIs ----
 google-api-python-client>=2.100.0
 google-auth>=2.25.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.2.0
 
-# Timezone handling
+# ---- Timezone handling ----
 pytz>=2024.1
 
-# Utilities
+# ---- Utilities ----
 python-dotenv>=1.0.0
+
+# NOTE: `google-genai` supprimé — rien dans le code ne l'importe (les images
+# Gemini passent par l'endpoint REST dans image_providers.py).
+# NOTE: chatterbox-tts / torchaudio / transformers / resemble-perth /
+# playwright déplacés dans requirements-optional.txt — imports paresseux,
+# inutiles sur les runners CPU (TTS_ENGINE=kokoro).

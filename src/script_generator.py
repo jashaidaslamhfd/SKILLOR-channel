@@ -231,10 +231,21 @@ def _trim_to_word_limit(caption: str, max_words: int) -> str:
     if len(words) <= max_words:
         return caption
     truncated = " ".join(words[:max_words])
-    # Prefer cutting at the last sentence-ending punctuation within range.
+    # Prefer cutting at the last sentence-ending punctuation in range.
+    # The old >=50% floor forced the hard-cut fallback, which shipped
+    # MID-SENTENCE voiceovers (see production history). Early-but-complete
+    # beats broken every time; _validate_script retries if it comes out
+    # too short — regeneration is better than broken audio.
     last_stop = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
-    if last_stop >= len(truncated) * 0.5:  # only use it if it's not too early
+    if last_stop >= len(truncated) * 0.3:
         return truncated[:last_stop + 1]
+    # No sentence boundary: cut at the last clause boundary so the spoken
+    # line still sounds like a deliberate end, not a crash.
+    clause_floor = len(truncated) * 0.4
+    for sep in (";", "—", ",", ":"):
+        idx = truncated.rfind(sep)
+        if idx >= clause_floor:
+            return truncated[:idx].rstrip() + "."
     truncated = truncated.rstrip(",;:")
     if not truncated.endswith((".", "!", "?")):
         truncated += "."
@@ -352,8 +363,70 @@ def _validate_script(script_data: Dict) -> Tuple[bool, List[str]]:
         first = norm(scenes[0].get('caption', ''))
         if hook != first:
             issues.append("Hook must exactly match the first scene caption")
-    
+
+    # ------------------------------------------------------------------
+    # STORY ARC ENFORCEMENT — the prompt demands Accroche → Suspense → …
+    # → Réponse → Boucle, but nothing enforced it. YouTube Shorts ranks on
+    # first-3s swipe survival + completion + replays: an open question in
+    # scene 2 and a closing loop pointing back to the hook are the cheapest
+    # retention levers. A script missing them is retried, never shipped.
+    # ------------------------------------------------------------------
+    if len(scenes) >= 3:
+        suspense = scenes[1].get('caption', '')
+        if '?' not in suspense:
+            issues.append(
+                "Scene 2 (SUSPENSE) must open one honest question ('?') — "
+                "the open loop is what stops the swipe in the first 3s."
+            )
+        hook_concepts = _content_concepts(scenes[0].get('caption', ''))
+        tail_concepts = _content_concepts(scenes[-1].get('caption', ''))
+        if hook_concepts and not (hook_concepts & tail_concepts):
+            issues.append(
+                "Final scene (LOOP-BACK) must echo the opening idea — share at "
+                "least one concept word with the hook so the Short loops "
+                "cleanly (replay = ranking signal)."
+            )
+
     return len(issues) == 0, issues
+
+
+_ARC_STOPWORDS = {
+    # English (shared codepath)
+    "this", "that", "with", "from", "your", "yours", "when", "what", "why",
+    "how", "have", "has", "been", "there", "their", "they", "them", "about",
+    "just", "like", "over", "under", "more", "most", "some", "into", "also",
+    "very", "than", "then", "these", "those", "because", "while", "after",
+    "before", "people", "really", "actually", "don't", "doesn't", "every",
+    "many", "much", "feel", "feels", "thing", "things", "body",
+    # French — without these, function words would create false-overlap
+    # between hook and loop-back for fr-FR scripts. (A real example caught
+    # by the tests: "pendant" appears in almost every sentence and faked
+    # the loop-back match.)
+    "votre", "vous", "avec", "pour", "dans", "cette", "quand", "pourquoi",
+    "comment", "mais", "plus", "très", "être", "avoir", "nous", "tout",
+    "tous", "toute", "fait", "faite", "aussi", "encore", "comme", "chose",
+    "choses", "corps", "bien", "dont", "leur", "leurs", "elles", "alors",
+    "peut", "faut", "sans", "soit", "rien", "jamais", "toujours", "parce",
+    "notre", "nos", "votre", "vos", "ceci", "cela", "celles", "ceux",
+    "quoi", "quel", "quelle", "même", "moins", "vraiment", "souvent",
+    "pendant", "après", "avant", "entre", "chez", "vers", "depuis",
+    "contre", "selon", "afin", "grâce", "malgré", "enfin", "puis", "dès",
+    "voici", "voilà", "autre", "autres", "chaque", "quand", "veut", "sont",
+    "avons", "avez", "suis", "es", "est", "était", "sera", "avoir",
+}
+
+
+def _content_concepts(text: str) -> set:
+    """Stem-ish concept words for arc-overlap checks: lowercase, punctuation
+    stripped, stopwords and short words removed, naive trailing-'s' fold so
+    plurals/singulars collide in both English and French."""
+    concepts = set()
+    for raw in re.sub(r"[^a-z0-9àâäçéèêëîïôöùûüÿœæ ]", " ", text.lower()).split():
+        if len(raw) <= 3 or raw in _ARC_STOPWORDS:
+            continue
+        stem = raw.rstrip("s")  # crude plural fold (works for FR too)
+        concepts.add(stem if len(stem) > 3 else raw)
+    return concepts
 
 
 # ---------------------------------------------------------------------------
