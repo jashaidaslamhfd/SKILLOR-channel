@@ -178,5 +178,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 100,
     "predicted_retention": 0.8
+  },
+  {
+    "content_fingerprint": "b76c6fa4abfb0a05f2968df53676ec2f395b4201758d8bf60f98d93c29765483",
+    "title": "Ce que la science explique sur l'effet du stress",
+    "topic": "Ce que la science explique sur l'effet du stress sur la m\u00e9moire",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Pourquoi le stress affecte notre m\u00e9moire ? Qu'est-ce que le stress fait exactement \u00e0 notre capacit\u00e9 de m\u00e9morisation ? On oublie souvent des choses sous le stress, c'est une exp\u00e9rience courante et frustrante Le cortisol, une hormone du stress, perturbe les processus de m\u00e9morisation et de rappel Cela modifie la fa\u00e7on dont les neurones communiquent et stockent les informations dans notre cerveau C'est un ph\u00e9nom\u00e8ne habituel, qui survient lors de situations difficiles ou de pression intense Comprendr",
+    "posted_at": "2026-07-23T12:47:42.329404+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "yxoI9-KWXzI",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 90,
+    "predicted_retention": 0.755
   }
 ]
