@@ -8,29 +8,15 @@ on:
         required: false
         type: string
   schedule:
-    # ---------------------------------------------------------------------
     # 3 videos/day for a French audience, auto-published at Paris peaks
-    # (08:00 / 13:00 / 19:00 Europe/Paris) via status.publishAt — an earlier
-    # video that went live at 02:32 Paris flopped, so exact timing matters.
-    #
-    # Each slot has a summer (CEST, UTC+2) and a winter (CET, UTC+1) cron
-    # that fires ~90 min before publish time — NO manual DST cron flipping
-    # anymore (the old comment said "shift these to 07/12/18 in winter";
-    # forgetting it meant a month of off-peak uploads).
-    #
-    # The gate below uses WIDE generation windows (late GitHub crons used to
-    # be silently skipped by a narrow gate — that's why it was removed "per
-    # owner request"; this version brings the gate back in a form that never
-    # skips a real window, only the off-season twin cron). The twin cron is
-    # deduped downstream by ENFORCE_POSTING_GAP (2h minimum between posts),
-    # NOT by this gate, so a delayed in-season cron still produces a video.
-    # ---------------------------------------------------------------------
-    - cron: "30 4 * * *"    # 06:30 Paris summer → publish 08:00
-    - cron: "30 5 * * *"    # 06:30 Paris winter → publish 08:00
-    - cron: "0 10 * * *"    # 12:00 Paris summer → publish 13:00
-    - cron: "0 11 * * *"    # 12:00 Paris winter → publish 13:00
-    - cron: "30 15 * * *"   # 17:30 Paris summer → publish 19:00
-    - cron: "30 16 * * *"   # 17:30 Paris winter → publish 19:00
+    # (08:00 / 13:00 / 19:00 Europe/Paris) via status.publishAt — the code
+    # snaps each upload to the exact next Paris slot, so the cron only needs
+    # to start generation a bit before the slot. ONE cron per slot, year-round
+    # (the winter/summer twin-cron system was removed per owner request —
+    # publishAt already makes it unnecessary).
+    - cron: "30 4 * * *"    # generation ~06:30 Paris -> publish 08:00
+    - cron: "0 10 * * *"    # generation ~12:00 Paris -> publish 13:00
+    - cron: "30 15 * * *"   # generation ~17:30 Paris -> publish 19:00
 
 permissions:
   contents: write
@@ -44,45 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - name: Checkout repository (gate reads state from data/)
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Gate the run to Paris generation windows (delay-tolerant, deduped)
-        id: gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          paris_full="$(TZ=Europe/Paris date '+%H:%M %Z')"
-          paris_hour="$(TZ=Europe/Paris date +%H)"
-          echo "Current Paris time: $paris_full"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # WIDE windows — GitHub crons regularly arrive 1-2h late; the old edges
-          # silently killed the ONLY in-season cron of that slot (owner report:
-          # "9-12 sec mein run band"). Now a run starting up to ~2.5h late still
-          # generates, and publishAt snaps to the next exact slot anyway.
-          should_run="false"
-          case "$paris_hour" in
-            06|07|08|11|12|13|17|18|19) should_run="true" ;;
-            *) should_run="false"; echo "::notice title=Skip (by design)::Off-season DST twin cron at $paris_full — the in-season twin covers this slot. NOT an error." ;;
-          esac
-          # Twin-cron dedupe runs HERE (cheap, before any generation): if a video
-          # was already posted <2h ago, this run is the redundant twin for the
-          # same slot — skip at ~20s cost instead of burning ~10 min of compute.
-          last_posted="$(python3 -c "import json,os; p='data/video_history.json'; vh=json.load(open(p)) if os.path.exists(p) else []; items=vh if isinstance(vh,list) else vh.get('videos',[]); posted=[i.get('posted_at') for i in items if i.get('posted_at')]; print(max(posted) if posted else '')")"
-          if [ -n "$last_posted" ]; then
-            echo "Last post: $last_posted"
-            if python3 -c "from datetime import datetime,timezone; import sys; sys.exit(0 if (datetime.now(timezone.utc)-datetime.fromisoformat('$last_posted')).total_seconds()<7200 else 1)"; then
-              should_run="false"
-              echo "::notice title=Skip (by design)::Twin-cron duplicate — this slot's video is already posted/scheduled. NOT an error."
-            fi
-          fi
-          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-
       - name: Set up Python 3.11
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -90,7 +41,6 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Cache TTS model downloads for CPU reliability
-        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -101,7 +51,6 @@ jobs:
             skillor-tts-models-${{ runner.os }}-
 
       - name: Install system dependencies
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -114,7 +63,6 @@ jobs:
           for i in 1 2 3; do python -m pip install -r requirements.txt && break || { echo "pip install failed, retry $i"; sleep 15; }; done
 
       - name: Run offline quality regression tests
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -123,7 +71,6 @@ jobs:
           python -m unittest discover -s tests -v
 
       - name: Validate required secrets (fail fast, before burning compute)
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -150,7 +97,6 @@ jobs:
           exit "$missing"
 
       - name: Generate and upload Short
-        if: steps.gate.outputs.should_run == 'true'
         shell: bash
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -226,7 +172,7 @@ jobs:
           done
 
       - name: Persist durable channel state (with rebase retry)
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -241,7 +187,7 @@ jobs:
           done
 
       - name: Upload video, thumbnail, state backup and logs
-        if: always() && steps.gate.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: skillor-run-${{ github.run_id }}
