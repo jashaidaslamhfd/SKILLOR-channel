@@ -111,10 +111,16 @@ def build_new_metadata(entry: dict, current: dict) -> dict | None:
     changes: dict = {}
 
     # --- TITLE ---
-    if topic_full and (_looks_truncated(old_title) or _is_label_title(old_title) or old_title != topic_full):
+    # Only touch a BROKEN title (clips mid-sentence, dangling verb, or a bare
+    # 2-3 word label). A full grammatical question/sentence title is left
+    # alone even if it differs from the catalogue angle — question titles in
+    # second person ("Pourquoi ton corps... ?") are the winning style.
+    title_broken = _looks_truncated(old_title) or _is_label_title(old_title)
+    if topic_full and title_broken:
         cap = topic_full[0].upper() + topic_full[1:]
         new_title = _truncate_title(cap)
-        if new_title and new_title != old_title and len(new_title.split()) >= 3:
+        if new_title and new_title != old_title and len(new_title.split()) >= 3 \
+                and not _looks_truncated(new_title):
             changes["title"] = new_title
 
     # --- TAGS ---
@@ -158,6 +164,25 @@ def build_new_metadata(entry: dict, current: dict) -> dict | None:
     }
     from seo_generator import generate_description
     new_desc = generate_description(script_like, changes.get("tags", old_tags) or new_tags)
+    # tidy the hashtag block: dedupe, drop junk fragments, cap at 10 (YouTube
+    # only surfaces the first 3 above the title; the rest are search signals)
+    junk_h = {"#d'une", "#d'un", "#lors", "#dans", "#avec", "#sans", "#pour", "#que", "#qui"}
+    lines = new_desc.strip().split("\n")
+    body_lines, tags_seen, tag_lines = [], set(), []
+    for ln in lines:
+        words = ln.split()
+        if words and all(w.startswith("#") for w in words):
+            for w in words:
+                wl = w.lower()
+                if wl not in tags_seen and wl not in junk_h and len(w) >= 4:
+                    tags_seen.add(wl)
+                    tag_lines.append(w)
+        else:
+            body_lines.append(ln)
+    rebuilt = "\n".join(body_lines).rstrip()
+    if tag_lines:
+        rebuilt += "\n\n" + " ".join(tag_lines[:10])
+    new_desc = rebuilt
     old_desc = (snip.get("description") or "").strip()
     if new_desc and new_desc.strip() != old_desc:
         changes["description"] = new_desc.strip()

@@ -111,6 +111,8 @@ _DANGLING_ENDINGS = {
     "peuvent", "votre", "notre", "vous", "on", "toujours", "souvent",
     "parfois", "soudain", "tout", "tous", "toute", "très", "plus",
     "aussi", "encore", "quand", "comment", "pourquoi", "vraiment",
+    "arrive", "arrivent", "paraît", "commence", "revient", "reste",
+    "deviennent", "semble-t", "donne", "montre", "voit", "entend",
 }
 
 
