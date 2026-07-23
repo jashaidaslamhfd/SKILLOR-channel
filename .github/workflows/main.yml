@@ -44,32 +44,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Checkout repository (gate reads state from data/)
+        uses: actions/checkout@v4
+
       - name: Gate the run to Paris generation windows (delay-tolerant, deduped)
         id: gate
         shell: bash
         run: |
           set -euo pipefail
-          paris_hour="$(TZ=Europe/Paris date +%H)"
           paris_full="$(TZ=Europe/Paris date '+%H:%M %Z')"
+          paris_hour="$(TZ=Europe/Paris date +%H)"
           echo "Current Paris time: $paris_full"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Windows before each Paris slot (publishAt snaps to the exact slot).
-          # Late crons stay inside; twin-cron duplicates are deduped by the
-          # 2-hour posting gap, not here — real runs never get skipped:
-          #   06-07 → 08:00 · 11-12 → 13:00 · 17-18 → 19:00
+          # WIDE windows — GitHub crons regularly arrive 1-2h late; the old edges
+          # silently killed the ONLY in-season cron of that slot (owner report:
+          # "9-12 sec mein run band"). Now a run starting up to ~2.5h late still
+          # generates, and publishAt snaps to the next exact slot anyway.
           should_run="false"
           case "$paris_hour" in
-            06|07|11|12|17|18) should_run="true" ;;
-            *) echo "::notice::Skip - Paris $paris_full outside generation windows (off-season DST cron, expected)" ;;
+            06|07|08|11|12|13|17|18|19) should_run="true" ;;
+            *) should_run="false"; echo "::notice title=Skip (by design)::Off-season DST twin cron at $paris_full — the in-season twin covers this slot. NOT an error." ;;
           esac
+          # Twin-cron dedupe runs HERE (cheap, before any generation): if a video
+          # was already posted <2h ago, this run is the redundant twin for the
+          # same slot — skip at ~20s cost instead of burning ~10 min of compute.
+          last_posted="$(python3 -c "import json,os; p='data/video_history.json'; vh=json.load(open(p)) if os.path.exists(p) else []; items=vh if isinstance(vh,list) else vh.get('videos',[]); posted=[i.get('posted_at') for i in items if i.get('posted_at')]; print(max(posted) if posted else '')")"
+          if [ -n "$last_posted" ]; then
+            echo "Last post: $last_posted"
+            if python3 -c "from datetime import datetime,timezone; import sys; sys.exit(0 if (datetime.now(timezone.utc)-datetime.fromisoformat('$last_posted')).total_seconds()<7200 else 1)"; then
+              should_run="false"
+              echo "::notice title=Skip (by design)::Twin-cron duplicate — this slot's video is already posted/scheduled. NOT an error."
+            fi
+          fi
           echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout repository
-        if: steps.gate.outputs.should_run == 'true'
-        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         if: steps.gate.outputs.should_run == 'true'
