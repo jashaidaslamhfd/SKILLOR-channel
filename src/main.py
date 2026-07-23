@@ -249,12 +249,9 @@ class SKILLORPipeline:
                     generated['series_number'] = trend_record.get('series_number')
                     generated['series_title'] = trend_record.get('series_title')
                     generated['thumbnail_text'] = trend_record.get('thumbnail_text', '')
-                    # Viewer-facing title stays short (e.g. "Eye Twitch 👁️"). The
-                    # permanent episode number remains in metadata/history,
-                    # while the repeated micro-niche is reinforced by topic,
-                    # visuals and upload cadence.
-                    if trend_record.get('series_title'):
-                        generated['title'] = trend_record['series_title']
+                    # series_title reste en métadonnée (numérotation d'épisodes) —
+                    # il ne remplace plus le titre LLM: les étiquettes 2-3 mots
+                    # ont mesuré un faible CTR vs les titres curiosité complets.
                 script_data = result['script_data']
                 # Preserve the actual French episode angle for SEO, history and analytics.
                 script_data['topic'] = current_topic

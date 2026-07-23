@@ -103,6 +103,14 @@ _DANGLING_ENDINGS = {
     "au", "aux", "à", "en", "dans", "sur", "sous", "chez", "avec", "sans",
     "pour", "par", "et", "ou", "ni", "mais", "donc", "car", "que", "qui",
     "quand", "lorsque", "si", "ce", "cette", "ses", "leur", "leurs", "y",
+    # Truncation-safe verbs/adverbs: a title must NEVER end on these — they
+    # scream "clipped mid-sentence" in the feed (analytics: dangling verb
+    # titles were published live).
+    "sembler", "semble", "semblera", "devenir", "devient", "vient", "va",
+    "vont", "fait", "faire", "dit", "passe", "se", "est", "sont", "peut",
+    "peuvent", "votre", "notre", "vous", "on", "toujours", "souvent",
+    "parfois", "soudain", "tout", "tous", "toute", "très", "plus",
+    "aussi", "encore", "quand", "comment", "pourquoi", "vraiment",
 }
 
 
