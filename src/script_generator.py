@@ -96,7 +96,12 @@ SUJET : {topic}
 Utilise EXACTEMENT huit scènes et retourne le schéma JSON ci-dessous.
 
 ARC NARRATIF :
-1. ACCROCHE — scène 1 ; curiosité concrète.
+1. ACCROCHE — scène 1 ; RUPTURE DE PATTERN à la deuxième personne ("tu/vous/votre
+   corps") : nomme un moment du quotidien puis le détail inattendu qui crée une
+   boucle ouverte impossible à zapper. BON : « Pourquoi ta voix sonne morte
+   chaque matin ? » / « Ton corps te fige avant un bruit qui fait peur. »
+   MAUVAIS (jamais) : « La voix du matin arrive à tout le monde. » — une phrase
+   plate = le pouce qui glisse.
 2. QUESTION — scène 2 ; pourquoi cela compte.
 3. CONFUSION — scène 3 ; idée reçue ou expérience familière.
 4. EXPLICATION — scènes 4–5 ; mécanisme clair, étape par étape.
@@ -108,8 +113,14 @@ RÈGLES DE FORMAT :
 - Total des légendes parlées : {MIN_WORDS}–{MAX_WORDS} mots français.
 - Scène 1 : {HOOK_MIN_WORDS}–{HOOK_MAX_WORDS} mots. Scènes 2–8 : {MIN_SCENE_WORDS}–{MAX_SCENE_WORDS} mots chacune.
 - `hook` doit correspondre exactement à la légende de la scène 1.
+- Visuel scène 1 : GROS PLAN humain concret (bouche devant un miroir, main sur
+  la poitrine, yeux qui s'ouvrent au réveil) — un visage/proche arrête le
+  scroll, un plan large abstrait non.
 - Chaque scène doit avoir un visuel distinct de 5 à 12 mots, sans texte, logo ni interface.
-- Titre : maximum cinq mots, simple, spécifique, sans emoji ni sensationnalisme.
+- Titre : cinq à huit mots qui OUVRENT UNE BOUCLE DE CURIOSITÉ avec « Pourquoi »
+  ou « ton/ta/votre » — BON : « Pourquoi ton cœur bat la nuit » · « Pourquoi
+  ton corps se fige de peur ». MAUVAIS (rejeté) : étiquettes de 1-3 mots comme
+  « Voix du matin », « Choc anaphylactique » — zéro clic.
 - `thumbnail_text` : 2 à 4 mots clairs qui complètent le titre sans le répéter.
 - `cta` : une invitation courte et naturelle à s'abonner, uniquement en métadonnée.
 - `description` : une phrase exacte qui résume l'explication.
