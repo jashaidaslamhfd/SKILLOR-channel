@@ -51,8 +51,7 @@ def _access_token() -> str:
         "grant_type": "refresh_token",
     }).encode()
     req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
-    import urllib.request as _u
-    with _u.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)["access_token"]
 
 
@@ -63,9 +62,9 @@ def _api(path: str, token: str, *, method: str = "GET", body: dict = None):
     url = "https://www.googleapis.com/youtube/v3/" + path
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    req["Authorization"] = f"Bearer {token}"
+    req.add_header("Authorization", f"Bearer {token}")
     if data is not None:
-        req["Content-Type"] = "application/json"
+        req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             if r.status == 204:
