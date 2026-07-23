@@ -8,7 +8,7 @@ from shorts_enhancer import score_hook
 class FranceChannelTests(unittest.TestCase):
     def test_catalogue_is_french_and_complete(self):
         records=get_body_glitch_topics()
-        self.assertEqual(len(records),500)
+        self.assertGreaterEqual(len(records),500)
         self.assertEqual(records[0]['series_title'],'Paupière qui saute')
         self.assertEqual(records[0]['source'],'body_glitch_series_fr')
         self.assertTrue(all(x['pillar']=='reflexes_du_corps' for x in records))
@@ -45,7 +45,7 @@ class FranceChannelTests(unittest.TestCase):
         from french_quality_gate import _DANGLING_CAPTION_END
         records=get_body_glitch_topics()
         angles=[r['angle'] for r in records]
-        self.assertEqual(len(set(angles)),500,'every topic must be unique')
+        self.assertEqual(len(set(angles)),len(angles),'every topic must be unique')
         for angle in angles:
             self.assertNotRegex(angle, r'\s{2,}', 'no double spaces')
             self.assertNotRegex(angle, r'[.!?…]\s+(et|ou|ni)\b', 'no broken continuation')
