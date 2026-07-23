@@ -163,5 +163,20 @@
     "predicted_ctr": 7.6,
     "hook_score": 100,
     "predicted_retention": 0.75
+  },
+  {
+    "content_fingerprint": "ebe3038da6496d4b3f534033b139156029b5fd524708b5eff48f08815443e5a5",
+    "title": "Pourquoi le cerveau rep\u00e8re son propre pr\u00e9nom peut sembler",
+    "topic": "Pourquoi le cerveau rep\u00e8re son propre pr\u00e9nom peut sembler \u00e9trange",
+    "trend_source": "body_glitch_series_fr",
+    "trend_url": null,
+    "voiceover": "Le cerveau reconna\u00eet son pr\u00e9nom de mani\u00e8re \u00e9trange Mais pourquoi le cerveau peut-il rep\u00e9rer son propre pr\u00e9nom avec tant de facilit\u00e9 ? On se demande souvent pourquoi cela se produit ainsi dans notre vie quotidienne Les neurones du cerveau communiquent pour reconna\u00eetre les sons et les identifier avec pr\u00e9cision Les connexions neuronales s'activent pour identifier les pr\u00e9noms et les distinguer des autres sons C'est un ph\u00e9nom\u00e8ne habituel qui se produit dans la vie quotidienne sans que nous nous en re",
+    "posted_at": "2026-07-23T04:07:48.183726+00:00",
+    "facebook_success": false,
+    "youtube_video_id": "RV4LGjp89-U",
+    "seo_score": 85,
+    "predicted_ctr": 7.6,
+    "hook_score": 100,
+    "predicted_retention": 0.8
   }
 ]
