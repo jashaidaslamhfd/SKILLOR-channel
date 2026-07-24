@@ -148,14 +148,143 @@ def main():
             "description": NEW_DESCRIPTION,
             "keywords": NEW_KEYWORDS,
             "defaultLanguage": "fr",
+            "country": "FR",
         }}}
         try:
             _api("channels?part=brandingSettings", token, method="PUT", body=body)
-            print("APPLY: branding updated (description + keywords + defaultLanguage=fr)")
+            print("APPLY: branding updated (description + keywords + defaultLanguage=fr + country=FR)")
         except Exception as exc:
             print("APPLY FAILED:", exc)
             return 1
+        # Read-back verification
+        ver = _api("channels?part=brandingSettings&mine=true", token)
+        vch = ver["items"][0].get("brandingSettings", {}).get("channel", {})
+        print("VERIFY branding:", json.dumps({
+            "defaultLanguage": vch.get("defaultLanguage"),
+            "country": vch.get("country"),
+            "keywords_head": (vch.get("keywords") or "")[:80],
+        }, ensure_ascii=False))
+        repair_video_languages(token)
+        repair_broken_titles(token)
     return 0
+
+
+def repair_broken_titles(token) -> None:
+    """Re-derive titles for uploads whose live title is a clipped fragment of
+    the original catalogue topic (e.g. "Ce que votre corps vous dit quand le
+    silence" — a real shipped title cut mid-sentence).  The new seo_generator
+    title engine rebuilds a complete question/clause from the SAME topic, so
+    re-running is idempotent: once live == engine(topic) the video is skipped."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    try:
+        from seo_generator import _truncate_title  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        print("TITLE REPAIR: seo_generator import failed:", exc)
+        return
+    hist_path = os.path.join(os.path.dirname(__file__), "..", "data", "video_history.json")
+    try:
+        hist = json.load(open(hist_path, encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print("TITLE REPAIR: history unreadable:", exc)
+        return
+    topics = {v["youtube_video_id"]: (v.get("topic") or "")
+              for v in hist if v.get("youtube_video_id") and v.get("topic")}
+
+    ch = _api("channels?part=contentDetails&mine=true", token)
+    upl = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids, page = [], None
+    while len(ids) < 30:
+        url = (f"playlistItems?part=contentDetails&maxResults=30&playlistId={upl}"
+               + (f"&pageToken={page}" if page else ""))
+        res = _api(url, token)
+        ids += [it["contentDetails"]["videoId"] for it in res.get("items", [])]
+        page = res.get("nextPageToken")
+        if not page:
+            break
+    def _norm(s: str) -> str:
+        import re as _re
+        return " ".join(_re.findall(r"[\wÀ-ÿŒœ'’-]+", (s or "").lower(), flags=_re.UNICODE))
+
+    vids = _api("videos?part=snippet&id=" + ",".join(ids), token).get("items", [])
+    fixed = skipped = failed = 0
+    for v in vids:
+        topic = topics.get(v["id"])
+        if not topic:
+            continue
+        sn = v["snippet"]
+        # SAFETY GUARD: only videos whose live title is a *strict prefix* of
+        # the original topic were visibly clipped mid-sentence at upload time.
+        # Anything else is a complete (possibly already repaired) title —
+        # leave it untouched so this repair can never churn or downgrade one.
+        live_n, topic_n = _norm(sn["title"]), _norm(topic)
+        if not (len(live_n) >= 15 and topic_n.startswith(live_n) and live_n != topic_n):
+            skipped += 1
+            continue
+        new_title = _truncate_title(topic)
+        if not new_title or new_title == sn["title"]:
+            skipped += 1
+            continue
+        body = {"id": v["id"], "snippet": {
+            "title": new_title,
+            "description": sn.get("description", ""),
+            "tags": sn.get("tags", []),
+            "categoryId": sn.get("categoryId", "28"),
+            "defaultLanguage": (sn.get("defaultLanguage") or "fr"),
+            "defaultAudioLanguage": (sn.get("defaultAudioLanguage") or "fr"),
+        }}
+        try:
+            _api("videos?part=snippet", token, method="PUT", body=body)
+            fixed += 1
+            print(f"TITLE FIX {v['id']}\n   old: {sn['title'][:90]}\n   new: {new_title[:90]}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"TITLE FAIL {v['id']} | {exc}")
+    print(f"BROKEN TITLE REPAIR: fixed={fixed} already_ok={skipped} failed={failed}")
+
+
+def repair_video_languages(token) -> None:
+    """Set defaultLanguage/defaultAudioLanguage to 'fr' on every upload whose
+    language metadata is missing or wrong.  A video tagged 'en' gets tested
+    against English-speaking viewers first; French audio then earns instant
+    swipe-aways and the algorithm buries it.  videos.update replaces the whole
+    snippet part, so title/description/tags/categoryId are re-sent verbatim."""
+    ch = _api("channels?part=contentDetails&mine=true", token)
+    upl = ch["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids, page = [], None
+    while len(ids) < 30:
+        url = (f"playlistItems?part=contentDetails&maxResults=30&playlistId={upl}"
+               + (f"&pageToken={page}" if page else ""))
+        res = _api(url, token)
+        ids += [it["contentDetails"]["videoId"] for it in res.get("items", [])]
+        page = res.get("nextPageToken")
+        if not page:
+            break
+    vids = _api("videos?part=snippet&id=" + ",".join(ids), token).get("items", [])
+    fixed = skipped = failed = 0
+    for v in vids:
+        sn = v["snippet"]
+        lang = (sn.get("defaultLanguage") or "").lower()
+        if lang == "fr":
+            skipped += 1
+            continue
+        body = {"id": v["id"], "snippet": {
+            "title": sn["title"],
+            "description": sn.get("description", ""),
+            "tags": sn.get("tags", []),
+            "categoryId": sn.get("categoryId", "28"),
+            "defaultLanguage": "fr",
+            "defaultAudioLanguage": "fr",
+        }}
+        try:
+            resp = _api("videos?part=snippet", token, method="PUT", body=body)
+            got = (resp or {}).get("snippet", {}).get("defaultLanguage")
+            fixed += 1
+            print(f"LANG FIX  {v['id']} | {lang or 'None'} -> {got or 'fr?'} | {sn['title'][:60]}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"LANG FAIL {v['id']} | {exc}")
+    print(f"VIDEO LANG REPAIR: fixed={fixed} already_ok={skipped} failed={failed}")
 
 
 if __name__ == "__main__":

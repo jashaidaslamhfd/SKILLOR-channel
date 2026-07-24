@@ -52,16 +52,31 @@ def get_json(url: str, token: str):
 
 
 def ana(token, start, end, metrics, dims=None, sort=None, maxr=None, filters=None):
-    q = {"ids": "channel==MINE", "startDate": start, "endDate": end, "metrics": metrics}
-    if dims:
-        q["dimensions"] = dims
-    if sort:
-        q["sort"] = sort
-    if maxr:
-        q["maxResults"] = str(maxr)
-    if filters:
-        q["filters"] = filters
-    return get_json(ANA + urllib.parse.urlencode(q), token)
+    """Analytics query that self-heals: if the API rejects an unavailable
+    metric (400 'Unknown identifier (X)'), drop X and retry, up to 5 times."""
+    mets = metrics.split(",")
+    for _ in range(5):
+        q = {"ids": "channel==MINE", "startDate": start, "endDate": end, "metrics": ",".join(mets)}
+        if dims:
+            q["dimensions"] = dims
+        if sort:
+            q["sort"] = sort
+        if maxr:
+            q["maxResults"] = str(maxr)
+        if filters:
+            q["filters"] = filters
+        res = get_json(ANA + urllib.parse.urlencode(q), token)
+        if "error" not in res:
+            res["_dropped_metrics"] = [m for m in metrics.split(",") if m not in mets]
+            return res
+        import re as _re
+        m = _re.search(r"Unknown identifier \(([\w]+)\)", res.get("body", ""))
+        if res["error"] == 400 and m and m.group(1) in mets and len(mets) > 1:
+            print(f"metric '{m.group(1)}' unavailable -> retrying without it")
+            mets.remove(m.group(1))
+            continue
+        return res
+    return res
 
 
 def main() -> int:

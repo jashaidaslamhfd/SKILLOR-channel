@@ -116,25 +116,92 @@ _DANGLING_ENDINGS = {
 }
 
 
+# Subordinate-clause openers: cutting BEFORE one of these leaves a head that
+# is a complete French phrase, not a mid-sentence chop.
+_CLAUSE_BREAKS = (" parce que ", " lorsque ", " pendant que ", " pendant ",
+                  " quand ", " que ")
+
+_QUESTION_STARTERS = ("pourquoi", "comment", "combien", "ce qui", "ce qu'")
+
+
+def _looks_question(head: str) -> bool:
+    return head.lower().startswith(_QUESTION_STARTERS)
+
+
+def _clause_cut(full: str, budget: int) -> str:
+    """Try to shorten `full` at a subordinate-clause boundary so the visible
+    head remains a complete, natural French phrase.  Returns "" when no clean
+    boundary fits the limits."""
+    low = full.lower()
+    best = ""
+    for br in _CLAUSE_BREAKS:
+        idx = low.find(br)
+        if idx <= 0:
+            continue
+        head = full[:idx].strip()
+        hw = head.split()
+        if not (4 <= len(hw) <= TITLE_MAX_WORDS and 20 <= len(head) <= budget):
+            continue
+        if hw[-1].lower().rstrip("?!.") in _DANGLING_ENDINGS:
+            continue
+        if len(head) > len(best):
+            best = head
+    return best
+
+
 def _truncate_title(text: str, fallback="La science du quotidien") -> str:
     """Shorten a title without ever leaving a visibly broken French fragment.
-    Truncation happens at word boundaries, then strips any trailing connector
-    words ("le", "la", "son", "pour"...) so the result is still grammatical."""
+
+    Order of preference:
+      1. text already fits        -> keep it untouched;
+      2. cut at a clause boundary  -> "…quand X" loses the X clause cleanly;
+      3. remodel the phenomenon as a short "Pourquoi <phénomène> ?" question;
+      4. word-limit truncation + dangling-function-word cleanup (last resort).
+
+    Question-like starters always get their "?" (back)."""
     text = (text or "").strip()
-    trailing_q = text.endswith("?")
-    words = _words(text)
+    full = " ".join(_words(text))
+    if not full:
+        return fallback
+    wants_q = text.endswith("?") or _looks_question(full)
+    budget = TITLE_MAX_LEN - 2 if wants_q else TITLE_MAX_LEN
+    words = full.split()
+
+    def finish(out: str, q: bool) -> str:
+        if q and out and not out.endswith("?") and len(out) + 2 <= TITLE_MAX_LEN:
+            out += " ?"
+        return out or fallback
+
+    # 1) fits already
+    if len(words) <= TITLE_MAX_WORDS and len(full) <= budget:
+        return finish(full, wants_q)
+
+    # 2) clause-boundary cut
+    cut = _clause_cut(full, budget)
+    if cut:
+        return finish(cut, wants_q and _looks_question(cut))
+
+    # 3) remodel the bare phenomenon as a short question
+    bare = _bare_phenomenon(full)
+    if bare and bare.lower() != full.lower():
+        bwords = bare.split()
+        while bwords and (len(" ".join(bwords)) > budget - 9
+                          or len(bwords) > TITLE_MAX_WORDS - 2):
+            bwords.pop()
+        while len(bwords) > 2 and bwords[-1].lower().rstrip("?!.") in _DANGLING_ENDINGS:
+            bwords.pop()
+        if len(bwords) >= 3:
+            return finish("Pourquoi " + " ".join(bwords), True)
+
+    # 4) last resort: word truncation + dangling cleanup
     out = " ".join(words[:TITLE_MAX_WORDS])
-    max_len = TITLE_MAX_LEN - 2 if trailing_q else TITLE_MAX_LEN
-    if len(out) > max_len:
-        out = out[:max_len].rsplit(" ", 1)[0]
-    # Never end on a dangling article/preposition/conjunction.
+    if len(out) > budget:
+        out = out[:budget].rsplit(" ", 1)[0]
     parts = out.split()
-    while len(parts) > 1 and parts[-1].lower().rstrip("?!.") in _DANGLING_ENDINGS:
+    while len(parts) > 2 and parts[-1].lower().rstrip("?!.") in _DANGLING_ENDINGS:
         parts.pop()
     out = " ".join(parts).strip()
-    if trailing_q and out:
-        out += " ?"
-    return out or fallback
+    return finish(out, bool(parts) and parts[0].lower() == "pourquoi")
 
 
 def _category(topic):
