@@ -101,6 +101,33 @@ def audit(item):
     return issues
 
 
+def geo_report(token, days=90):
+    """Audience geography from YouTube Analytics API (needs yt-analytics.readonly)."""
+    import datetime
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=days)
+    path = ("https://youtubeanalytics.googleapis.com/v2/reports"
+            f"?ids=channel==MINE&startDate={start}&endDate={end}"
+            "&metrics=views,estimatedMinutesWatched,subscribersGained"
+            "&dimensions=country&sort=-views&maxResults=10")
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(path)
+    req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            res = json.load(r)
+    except urllib.error.HTTPError as e:
+        print(f"GEO: analytics query blocked ({e.code}) — {e.read().decode(errors='replace')[:200]}")
+        return
+    rows = res.get("rows") or []
+    total = sum(r[1] for r in rows) or 1
+    print(f"================ AUDIENCE GEOGRAPHY (last {days}d) ================")
+    for r in rows:
+        print(f"  {r[0]:4} | {r[1]:>7} views ({100*r[1]/total:4.1f}%) | {r[2]:>7} min | +{r[3]} subs")
+    print("=================================================================")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
@@ -113,6 +140,7 @@ def main():
     print("ISSUES FOUND:", len(issues))
     for i in issues:
         print(" -", i)
+    geo_report(token)
 
     if args.apply:
         cid = item["id"]
