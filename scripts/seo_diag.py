@@ -96,8 +96,8 @@ def main() -> int:
         "views,impressions,impressionsClickThroughRate,averageViewDuration",
         dims="insightTrafficSourceType", sort="-views")
     out["pervideo_28d"] = ana(tok, start, end,
-        "views,impressions,impressionsClickThroughRate,averageViewDuration,likes,subscribersGained",
-        dims="video", sort="-impressions", maxr=25)
+        "views,averageViewDuration,likes,comments,shares,subscribersGained",
+        dims="video", sort="-views", maxr=25)
 
     ch = get_json(DATA + "channels?part=snippet,statistics,brandingSettings,contentDetails&mine=true", tok)
     out["channel"] = ch
