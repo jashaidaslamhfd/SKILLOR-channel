@@ -33,10 +33,10 @@ MIN_SCENES = 8
 MAX_SCENES = 8
 # 96 words at the cloned-voice pace reliably reaches ~40 seconds while
 # leaving normal language room; forcing 104+ made the LLM pad or fail scenes.
-MIN_WORDS = 88
-MAX_WORDS = 118
+MIN_WORDS = 86
+MAX_WORDS = 110
 MAX_RETRIES = 3
-SCRIPT_POLICY_VERSION = "BODY_GLITCH_V3_RELAXED_VALIDATION"
+SCRIPT_POLICY_VERSION = "BODY_GLITCH_V4_ANSWER_FIRST"
 TEMPERATURE = 0.65
 MAX_TOKENS = 1400
 
@@ -44,7 +44,7 @@ MAX_TOKENS = 1400
 HOOK_MIN_WORDS = 5
 HOOK_MAX_WORDS = 9
 MIN_SCENE_WORDS = 11
-MAX_SCENE_WORDS = 17
+MAX_SCENE_WORDS = 16
 
 # A title such as "Why Got Fired Matters" is grammatically short but gives
 # viewers no scientific subject. Require a concrete channel-relevant anchor.
@@ -89,25 +89,34 @@ RÈGLES SÉRIE « RÉFLEXES DU CORPS » :
 - Si nécessaire, rappelle que des symptômes nouveaux, persistants, sévères ou inquiétants justifient l'avis d'un professionnel qualifié.
 """ if body_glitch_mode else ""
     return f"""
-Crée un YouTube Short original de 40 à 55 secondes sur ce sujet :
+Crée un YouTube Short original de 32 à 42 secondes sur ce sujet :
 SUJET : {topic}
 {series_rules}
 
 Utilise EXACTEMENT huit scènes et retourne le schéma JSON ci-dessous.
 
-ARC NARRATIF :
-1. ACCROCHE — scène 1 ; RUPTURE DE PATTERN à la deuxième personne ("tu/vous/votre
-   corps") : nomme un moment du quotidien puis le détail inattendu qui crée une
-   boucle ouverte impossible à zapper. BON : « Pourquoi ta voix sonne morte
-   chaque matin ? » / « Ton corps te fige avant un bruit qui fait peur. »
-   MAUVAIS (jamais) : « La voix du matin arrive à tout le monde. » — une phrase
-   plate = le pouce qui glisse.
-2. QUESTION — scène 2 ; pourquoi cela compte.
-3. CONFUSION — scène 3 ; idée reçue ou expérience familière.
-4. EXPLICATION — scènes 4–5 ; mécanisme clair, étape par étape.
-5. CONTEXTE — scène 6 ; ce qui est habituel, sans diagnostiquer.
-6. RÉPONSE — scène 7 ; explication utile.
-7. BOUCLE — scène 8 ; retour satisfaisant à l'accroche.
+ARC NARRATIF (LA RÉPONSE DÈS LA SCÈNE 2 — les analytics montrent que le
+spectateur part à 10 s si la réponse tarde) :
+1. ACCROCHE — scène 1 (0–3 s) ; RUPTURE DE PATTERN à la deuxième personne
+   (« tu/vous/votre corps ») : nomme LE phénomène précis du sujet puis le
+   détail inattendu qui crée une boucle ouverte. BON : « Pourquoi ta voix
+   sonne morte chaque matin ? » / « Ton corps te fige avant un bruit qui
+   fait peur. » MAUVAIS, INTERDIT : formules génériques réutilisables d'une
+   vidéo à l'autre (« Vous avez déjà ressenti cela ? », « Ça vous arrive
+   aussi ? ») ou phrases plates — chaque accroche est UNIQUE et cite le
+   phénomène exact.
+2. RÉPONSE FLASH — scène 2 (3–8 s) ; LE MÉCANISME CENTRAL EN UNE PHRASE qui
+   commence par « C'est… », « Ton cerveau… » ou « Ton corps… ». Le
+   spectateur est récompensé immédiatement — et une nouvelle boucle
+   s'ouvre (« mais comment ? »). Jamais de préparation ici.
+3. MÉCANISME — scènes 3–5 ; comment ça marche, étape par étape, concret et
+   oral. La scène 5 commence par une micro-relance : « Le plus étrange ? »,
+   « Encore plus fort : » ou « Et surtout : ».
+4. IDÉE REÇUE — scène 6 ; démonte l'explication fausse que tout le monde
+   croit vraie.
+5. À RETENIR — scène 7 ; conclusion pratique et prudente, sans diagnostiquer.
+6. BOUCLE — scène 8 ; retour satisfaisant à l'accroche, sans la répéter mot
+   à mot, pour relancer un nouveau visionnage.
 
 RÈGLES DE FORMAT :
 - Total des légendes parlées : {MIN_WORDS}–{MAX_WORDS} mots français.
