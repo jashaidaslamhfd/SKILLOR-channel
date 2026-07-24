@@ -2,7 +2,7 @@
   "window": {
     "start": "2026-06-26",
     "end": "2026-07-24",
-    "generated_at_utc": "2026-07-24T08:43:42.250738"
+    "generated_at_utc": "2026-07-24T08:46:42.607136"
   },
   "daily_28d": {
     "kind": "youtubeAnalytics#resultTable",
@@ -183,8 +183,200 @@
     ]
   },
   "pervideo_28d": {
-    "error": 400,
-    "body": "{\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"Unknown identifier (impressions) given in field parameters.sorts.\",\n    \"errors\": [\n      {\n        \"message\": \"Unknown identifier (impressions) given in field parameters.sorts.\",\n        \"domain\": \"global\",\n        \"reason\": \"invalid\"\n      }\n    ]\n  }\n}\n"
+    "kind": "youtubeAnalytics#resultTable",
+    "columnHeaders": [
+      {
+        "name": "video",
+        "columnType": "DIMENSION",
+        "dataType": "STRING"
+      },
+      {
+        "name": "views",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      },
+      {
+        "name": "averageViewDuration",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      },
+      {
+        "name": "likes",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      },
+      {
+        "name": "comments",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      },
+      {
+        "name": "shares",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      },
+      {
+        "name": "subscribersGained",
+        "columnType": "METRIC",
+        "dataType": "INTEGER"
+      }
+    ],
+    "rows": [
+      [
+        "68B-7lTf8nU",
+        1502,
+        11,
+        7,
+        0,
+        1,
+        0
+      ],
+      [
+        "r7URDUokZh0",
+        1006,
+        11,
+        30,
+        0,
+        0,
+        8
+      ],
+      [
+        "x15ltzEHaB8",
+        794,
+        10,
+        8,
+        0,
+        0,
+        1
+      ],
+      [
+        "FteL-0nbHWk",
+        684,
+        11,
+        13,
+        0,
+        0,
+        5
+      ],
+      [
+        "rR7yLwzBakA",
+        634,
+        12,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        "Re4VU9lryhQ",
+        198,
+        8,
+        6,
+        0,
+        0,
+        1
+      ],
+      [
+        "1XVYcxQqDqo",
+        154,
+        17,
+        5,
+        0,
+        0,
+        0
+      ],
+      [
+        "0V5ZhO3qviQ",
+        121,
+        10,
+        3,
+        0,
+        0,
+        1
+      ],
+      [
+        "6TMN07KA8g4",
+        7,
+        66,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        "hAb8ztZnG-k",
+        6,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        "oYWA48Tbcyc",
+        4,
+        34,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        "diImyvMyKig",
+        4,
+        124,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        "vAmu8qhid6w",
+        2,
+        8,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        "c8Rx61Hly_4",
+        1,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        "b3W6KVeZuCo",
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        "4Cg6ZMqZuts",
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        "nQI2RkTODb0",
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "_dropped_metrics": []
   },
   "channel": {
     "kind": "youtube#channelListResponse",
@@ -256,12 +448,12 @@
   },
   "recent_uploads": {
     "kind": "youtube#playlistItemListResponse",
-    "etag": "BBLqfu8LonxF5Zm_4KYMAPXQtKk",
+    "etag": "LFPb7E_jdRBhVRrOZKWoq2SGBoM",
     "nextPageToken": "EAAaBlBUOkNBOA",
     "items": [
       {
         "kind": "youtube#playlistItem",
-        "etag": "9cpwOTYAHxXfao3c2e8v3_B1Wx0",
+        "etag": "pKet4q5a6e3HBmVK1lq_0NJC1N4",
         "id": "VVV4ZDVSNm1FaWJLTTlHRDdyNUFmV1FnLnJsUGdCT3REM1VF",
         "snippet": {
           "publishedAt": "2026-07-24T07:20:00Z",
@@ -270,27 +462,27 @@
           "description": "Pourquoi le corps se fige quand on a peur. Pourquoi le corps se fige quand on a peur. Découvrez pourquoi votre corps se fige lorsqu'il ressent la peur et comment cela vous aide à réagir\n\nContenu éducatif, pas un avis médical. Si un symptôme persiste, parle à un professionnel de santé.\n\nTon corps se fige soudainement sans raison\n\nAbonne-toi pour en savoir plus sur notre corps et ses fonctionnements\n\n#shorts #corpshumain #anatomie #corps #fige #peur\n\nTon corps se fige soudainement sans raison\n\nAbonne-toi pour en savoir plus sur notre corps et ses fonctionnements\n\n#shorts #corpshumain #anatomie #corps #fige #peur\n#corps #fige #peur",
           "thumbnails": {
             "default": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/default.jpg?sqp=CODJjNMG&rs=AOn4CLAWB5cHKALjCptrkYUj0hqtLjmAow",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/default.jpg?sqp=CIzMjNMG&rs=AOn4CLASIXFc2ZcLZGLyEbf8yRSeMKpqbQ",
               "width": 120,
               "height": 90
             },
             "medium": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/mqdefault.jpg?sqp=CODJjNMG&rs=AOn4CLD2XHae6wkOTvt6Wd36-T7Oz1VWmw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/mqdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLBw58-cJ7mrHoQ19fwKzfGX2PDihw",
               "width": 320,
               "height": 180
             },
             "high": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/hqdefault.jpg?sqp=CODJjNMG&rs=AOn4CLCuRF0R-SAUrseqD8pmTBQBIyQ8Jw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/hqdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLDVum2FDPoHffDRcGOF5qIcwo1huQ",
               "width": 480,
               "height": 360
             },
             "standard": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/sddefault.jpg?sqp=CODJjNMG&rs=AOn4CLBRpJmZq4g64oB3NWztd4p9bytcjQ",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/sddefault.jpg?sqp=CIzMjNMG&rs=AOn4CLAv5GL7HB3IntTdktQbIEJkg7O-JA",
               "width": 640,
               "height": 480
             },
             "maxres": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/maxresdefault.jpg?sqp=CODJjNMG&rs=AOn4CLD_SWX_0hIlZJhHRur9fye-WQQONw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/maxresdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLB3D6vIgmYSxq6eWbVWowzmO9yJsw",
               "width": 1280,
               "height": 720
             }
@@ -1032,11 +1224,11 @@
   },
   "videos_detail": {
     "kind": "youtube#videoListResponse",
-    "etag": "h7W_KVT-ziBUY9WMB9ynRYDNT9o",
+    "etag": "0KW0vA3QaMWNhe7fiRC4NvLfjW0",
     "items": [
       {
         "kind": "youtube#video",
-        "etag": "LoQ1lOG0r_Nbndqf-QUAVt7JarY",
+        "etag": "gsCLuNK9L33QNhaMejvwKtLbsmw",
         "id": "rlPgBOtD3UE",
         "snippet": {
           "publishedAt": "2026-07-24T07:20:00Z",
@@ -1045,27 +1237,27 @@
           "description": "Pourquoi le corps se fige quand on a peur. Pourquoi le corps se fige quand on a peur. Découvrez pourquoi votre corps se fige lorsqu'il ressent la peur et comment cela vous aide à réagir\n\nContenu éducatif, pas un avis médical. Si un symptôme persiste, parle à un professionnel de santé.\n\nTon corps se fige soudainement sans raison\n\nAbonne-toi pour en savoir plus sur notre corps et ses fonctionnements\n\n#shorts #corpshumain #anatomie #corps #fige #peur\n\nTon corps se fige soudainement sans raison\n\nAbonne-toi pour en savoir plus sur notre corps et ses fonctionnements\n\n#shorts #corpshumain #anatomie #corps #fige #peur\n#corps #fige #peur",
           "thumbnails": {
             "default": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/default.jpg?sqp=CODJjNMG&rs=AOn4CLAWB5cHKALjCptrkYUj0hqtLjmAow",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/default.jpg?sqp=CIzMjNMG&rs=AOn4CLASIXFc2ZcLZGLyEbf8yRSeMKpqbQ",
               "width": 120,
               "height": 90
             },
             "medium": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/mqdefault.jpg?sqp=CODJjNMG&rs=AOn4CLD2XHae6wkOTvt6Wd36-T7Oz1VWmw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/mqdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLBw58-cJ7mrHoQ19fwKzfGX2PDihw",
               "width": 320,
               "height": 180
             },
             "high": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/hqdefault.jpg?sqp=CODJjNMG&rs=AOn4CLCuRF0R-SAUrseqD8pmTBQBIyQ8Jw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/hqdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLDVum2FDPoHffDRcGOF5qIcwo1huQ",
               "width": 480,
               "height": 360
             },
             "standard": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/sddefault.jpg?sqp=CODJjNMG&rs=AOn4CLBRpJmZq4g64oB3NWztd4p9bytcjQ",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/sddefault.jpg?sqp=CIzMjNMG&rs=AOn4CLAv5GL7HB3IntTdktQbIEJkg7O-JA",
               "width": 640,
               "height": 480
             },
             "maxres": {
-              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/maxresdefault.jpg?sqp=CODJjNMG&rs=AOn4CLD_SWX_0hIlZJhHRur9fye-WQQONw",
+              "url": "https://i9.ytimg.com/vi/rlPgBOtD3UE/maxresdefault.jpg?sqp=CIzMjNMG&rs=AOn4CLB3D6vIgmYSxq6eWbVWowzmO9yJsw",
               "width": 1280,
               "height": 720
             }
