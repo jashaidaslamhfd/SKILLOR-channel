@@ -29,9 +29,9 @@ NEW_DESCRIPTION = (
 )
 
 NEW_KEYWORDS = (
-    'science shorts "corps humain" pourquoi cerveau corps '
-    '"explique simplement" "faits etonnants" phenomene curiosite '
-    '"science amusante" sante culture friction francais'
+    'science shorts "corps humain" pourquoi cerveau '
+    '"expliqué simplement" "faits étonnants" phénomènes curiosité '
+    '"science amusante" santé "culture générale" français'
 )
 
 
